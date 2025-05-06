@@ -1,2 +1,2 @@
-def hello() -> str:
-    return "Hello from fax!"
+#!/usr/bin/python3
+
