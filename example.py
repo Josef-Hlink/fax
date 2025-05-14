@@ -1,10 +1,11 @@
 #!/usr/bin/python3
 # uv run main.py -e ~/Vault/fastslp.app -i ~/Vault/melee.iso -r ~/Desktop/
 
-import melee
-import sys
-import signal
 import argparse
+import signal
+import sys
+
+import melee
 
 
 def main():
