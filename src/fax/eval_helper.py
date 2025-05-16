@@ -13,42 +13,42 @@ from fax.constants import INCLUDED_STAGES, PLAYER_1_PORT, PLAYER_2_PORT, Player
 from fax.schema import NP_TYPE_BY_COLUMN
 
 PRIOR_STAGE_LIKELIHOODS = {
-    "BATTLEFIELD": 0.3358,
-    "YOSHIS_STORY": 0.2018,
-    "POKEMON_STADIUM": 0.1888,
-    "FOUNTAIN_OF_DREAMS": 0.1259,
-    "DREAMLAND": 0.0826,
-    "FINAL_DESTINATION": 0.0651,
+    'BATTLEFIELD': 0.3358,
+    'YOSHIS_STORY': 0.2018,
+    'POKEMON_STADIUM': 0.1888,
+    'FOUNTAIN_OF_DREAMS': 0.1259,
+    'DREAMLAND': 0.0826,
+    'FINAL_DESTINATION': 0.0651,
 }
 
 
 PRIOR_CHARACTER_LIKELIHOODS = {
-    "FOX": 0.2519,
-    "FALCO": 0.1779,
-    "MARTH": 0.1039,
-    "SHEIK": 0.0789,
-    "CPTFALCON": 0.0652,
-    "JIGGLYPUFF": 0.0636,
-    "PEACH": 0.0499,
-    "SAMUS": 0.034,
-    "LUIGI": 0.0274,
-    "POPO": 0.0212,
-    "GANONDORF": 0.0171,
-    "PIKACHU": 0.0166,
-    "DOC": 0.0161,
-    "DK": 0.0159,
-    "YOSHI": 0.00995,
-    "NESS": 0.00855,
-    "LINK": 0.00735,
-    "BOWSER": 0.0059,
-    "MEWTWO": 0.0058,
-    "MARIO": 0.0057,
-    "GAMEANDWATCH": 0.00500,
-    "ROY": 0.00435,
-    "YLINK": 0.0039,
-    "ZELDA": 0.00245,
-    "KIRBY": 0.00105,
-    "PICHU": 0.0004,
+    'FOX': 0.2519,
+    'FALCO': 0.1779,
+    'MARTH': 0.1039,
+    'SHEIK': 0.0789,
+    'CPTFALCON': 0.0652,
+    'JIGGLYPUFF': 0.0636,
+    'PEACH': 0.0499,
+    'SAMUS': 0.034,
+    'LUIGI': 0.0274,
+    'POPO': 0.0212,
+    'GANONDORF': 0.0171,
+    'PIKACHU': 0.0166,
+    'DOC': 0.0161,
+    'DK': 0.0159,
+    'YOSHI': 0.00995,
+    'NESS': 0.00855,
+    'LINK': 0.00735,
+    'BOWSER': 0.0059,
+    'MEWTWO': 0.0058,
+    'MARIO': 0.0057,
+    'GAMEANDWATCH': 0.00500,
+    'ROY': 0.00435,
+    'YLINK': 0.0039,
+    'ZELDA': 0.00245,
+    'KIRBY': 0.00105,
+    'PICHU': 0.0004,
 }
 
 
@@ -59,15 +59,15 @@ class Matchup:
     opponent_character: str
 
     @classmethod
-    def fox_bf(cls, n: int) -> List["Matchup"]:
-        return [Matchup(stage="BATTLEFIELD", ego_character="FOX", opponent_character="FOX")] * n
+    def fox_bf(cls, n: int) -> List['Matchup']:
+        return [Matchup(stage='BATTLEFIELD', ego_character='FOX', opponent_character='FOX')] * n
 
     @classmethod
-    def fox_yoshis(cls, n: int) -> List["Matchup"]:
-        return [Matchup(stage="YOSHIS_STORY", ego_character="FOX", opponent_character="FOX")] * n
+    def fox_yoshis(cls, n: int) -> List['Matchup']:
+        return [Matchup(stage='YOSHIS_STORY', ego_character='FOX', opponent_character='FOX')] * n
 
     @classmethod
-    def fox_dittos(cls, n: int, seed: int = 42) -> List["Matchup"]:
+    def fox_dittos(cls, n: int, seed: int = 42) -> List['Matchup']:
         rng = np.random.default_rng(seed)
         stages = rng.choice(
             list(PRIOR_STAGE_LIKELIHOODS.keys()),
@@ -77,15 +77,15 @@ class Matchup:
         )
         matchups = []
         for stage in stages:
-            matchups.append(Matchup(stage=stage, ego_character="FOX", opponent_character="FOX"))
+            matchups.append(Matchup(stage=stage, ego_character='FOX', opponent_character='FOX'))
         return matchups
 
     @classmethod
-    def spacies(cls, n: int) -> List["Matchup"]:
+    def spacies(cls, n: int) -> List['Matchup']:
         """Generate `n` spacies matchups"""
         matchups: List[Matchup] = []
         stages = INCLUDED_STAGES
-        characters = ["FOX", "FALCO"]
+        characters = ['FOX', 'FALCO']
         i = 0
         while len(matchups) < n:
             stage = stages[i % len(stages)]
@@ -96,7 +96,7 @@ class Matchup:
         return matchups
 
     @classmethod
-    def fox_rainbow(cls, n: int, seed: int = 42) -> List["Matchup"]:
+    def fox_rainbow(cls, n: int, seed: int = 42) -> List['Matchup']:
         rng = np.random.default_rng(seed)
         stages = rng.choice(
             list(PRIOR_STAGE_LIKELIHOODS.keys()),
@@ -111,16 +111,16 @@ class Matchup:
             p=list(PRIOR_CHARACTER_LIKELIHOODS.values()),
         )
         # We can't force CPU to pick Sheik, so we replace all Sheik with Zelda
-        opponent_characters = ["ZELDA" if c == "SHEIK" else c for c in opponent_characters]
+        opponent_characters = ['ZELDA' if c == 'SHEIK' else c for c in opponent_characters]
         matchups = []
         for stage, opponent_character in zip(stages, opponent_characters):
             matchups.append(
-                Matchup(stage=stage, ego_character="FOX", opponent_character=opponent_character)
+                Matchup(stage=stage, ego_character='FOX', opponent_character=opponent_character)
             )
         return matchups
 
     @classmethod
-    def rainbow(cls, n: int, seed: int = 42) -> List["Matchup"]:
+    def rainbow(cls, n: int, seed: int = 42) -> List['Matchup']:
         """Deterministically generate `n` random matchups."""
         rng = np.random.default_rng(seed)
         stages = rng.choice(
@@ -142,7 +142,7 @@ class Matchup:
             p=list(PRIOR_CHARACTER_LIKELIHOODS.values()),
         )
         # We can't force CPU to pick Sheik, so we replace all Sheik with Zelda
-        opponent_characters = ["ZELDA" if c == "SHEIK" else c for c in opponent_characters]
+        opponent_characters = ['ZELDA' if c == 'SHEIK' else c for c in opponent_characters]
         matchups = []
         for stages, ego_characters, opponent_characters in zip(
             stages, ego_characters, opponent_characters
@@ -170,7 +170,7 @@ class EpisodeStats:
     _prev_p1_percent: float = 0.0
     _prev_p2_percent: float = 0.0
 
-    def __add__(self, other: "EpisodeStats") -> "EpisodeStats":
+    def __add__(self, other: 'EpisodeStats') -> 'EpisodeStats':
         return EpisodeStats(
             p1_damage=self.p1_damage + other.p1_damage,
             p2_damage=self.p2_damage + other.p2_damage,
@@ -180,13 +180,13 @@ class EpisodeStats:
             episodes=self.episodes + other.episodes,
         )
 
-    def __radd__(self, other: "EpisodeStats") -> "EpisodeStats":
+    def __radd__(self, other: 'EpisodeStats') -> 'EpisodeStats':
         if other == 0:
             return self
         return self.__add__(other)
 
     def __str__(self) -> str:
-        return f"EpisodeStats({self.episodes=}, {self.p1_damage=}, {self.p2_damage=}, {self.p1_stocks_lost=}, {self.p2_stocks_lost=}, {self.frames=})"
+        return f'EpisodeStats({self.episodes=}, {self.p1_damage=}, {self.p2_damage=}, {self.p1_stocks_lost=}, {self.p2_stocks_lost=}, {self.frames=})'
 
     def update(self, gamestate: melee.GameState) -> None:
         if gamestate.menu_state not in (melee.Menu.IN_GAME, melee.Menu.SUDDEN_DEATH):
@@ -206,37 +206,37 @@ class EpisodeStats:
         self._prev_p2_stock = p2.stock
         self.frames += 1
 
-    def to_wandb_dict(self, player: Player, prefix: str = "closed_loop_eval") -> Dict[str, float]:
+    def to_wandb_dict(self, player: Player, prefix: str = 'closed_loop_eval') -> Dict[str, float]:
         if self.episodes == 0:
-            logger.warning("No closed loop episode stats recorded")
+            logger.warning('No closed loop episode stats recorded')
             return {}
 
         # Calculate stock win rate as stocks taken / (stocks taken + stocks lost)
-        stocks_taken = self.p2_stocks_lost if player == "p1" else self.p1_stocks_lost
-        stocks_lost = self.p1_stocks_lost if player == "p1" else self.p2_stocks_lost
+        stocks_taken = self.p2_stocks_lost if player == 'p1' else self.p1_stocks_lost
+        stocks_lost = self.p1_stocks_lost if player == 'p1' else self.p2_stocks_lost
         stock_win_rate = (
             stocks_taken / (stocks_taken + stocks_lost) if (stocks_taken + stocks_lost) > 0 else 0.0
         )
-        damage_inflicted = self.p2_damage if player == "p1" else self.p1_damage
-        damage_received = self.p1_damage if player == "p1" else self.p2_damage
+        damage_inflicted = self.p2_damage if player == 'p1' else self.p1_damage
+        damage_received = self.p1_damage if player == 'p1' else self.p2_damage
         damage_win_rate = (
             damage_inflicted / (damage_inflicted + damage_received)
             if (damage_inflicted + damage_received) > 0
             else 0.0
         )
         return {
-            f"{prefix}/episodes": self.episodes,
-            f"{prefix}/damage_inflicted": damage_inflicted,
-            f"{prefix}/damage_received": damage_received,
-            f"{prefix}/damage_inflicted_per_episode": damage_inflicted / self.episodes,
-            f"{prefix}/damage_received_per_episode": damage_received / self.episodes,
-            f"{prefix}/damage_win_rate": damage_win_rate,
-            f"{prefix}/stocks_taken": stocks_taken,
-            f"{prefix}/stocks_lost": stocks_lost,
-            f"{prefix}/stocks_taken_per_episode": stocks_taken / self.episodes,
-            f"{prefix}/stocks_lost_per_episode": stocks_lost / self.episodes,
-            f"{prefix}/stock_win_rate": stock_win_rate,
-            f"{prefix}/frames": self.frames,
+            f'{prefix}/episodes': self.episodes,
+            f'{prefix}/damage_inflicted': damage_inflicted,
+            f'{prefix}/damage_received': damage_received,
+            f'{prefix}/damage_inflicted_per_episode': damage_inflicted / self.episodes,
+            f'{prefix}/damage_received_per_episode': damage_received / self.episodes,
+            f'{prefix}/damage_win_rate': damage_win_rate,
+            f'{prefix}/stocks_taken': stocks_taken,
+            f'{prefix}/stocks_lost': stocks_lost,
+            f'{prefix}/stocks_taken_per_episode': stocks_taken / self.episodes,
+            f'{prefix}/stocks_lost_per_episode': stocks_lost / self.episodes,
+            f'{prefix}/stock_win_rate': stock_win_rate,
+            f'{prefix}/frames': self.frames,
         }
 
 
