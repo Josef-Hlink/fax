@@ -10,9 +10,12 @@ requires-python = ">=3.11"
 dependencies = [
     "attrs>=25.3.0",
     "gymnasium>=1.1.1",
+    "ipykernel>=6.29.5",
     "loguru>=0.7.3",
+    "matplotlib>=3.10.3",
     "melee",
     "numpy<2.0",
+    "peppi-py>=0.8.0",
     "psutil>=7.0.0",
     "ruff>=0.11.8",
     "tensordict>=0.8.2",
