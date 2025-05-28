@@ -15,6 +15,7 @@ def main():
         player='p1',
         replay_dir=PATHS.replays,
         debug=True,
+        opponent_cpu_level=0,
     )
 
     gs_generator = emulator_manager.run_game()
