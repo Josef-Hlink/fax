@@ -25,7 +25,7 @@ from fax.constants import ORIGINAL_BUTTONS, PLAYER_1_PORT, PLAYER_2_PORT, Player
 
 # from hal.eval.eval_helper import EpisodeStats, Matchup
 from fax.eval_helper import EpisodeStats, Matchup
-from fax.paths import PATHS
+from fax.paths import EXE, ISO, REPLAYS
 
 
 def _get_console_port(player: Player) -> int:
@@ -87,7 +87,7 @@ def find_open_udp_ports(n: int, min_port=1024, max_port=65535) -> list[int]:
 
 def get_replay_dir(artifact_dir: Path | None = None, step: int | None = None) -> Path:
     if artifact_dir is None:
-        replay_dir = Path(PATHS.replays)
+        replay_dir = Path(REPLAYS)
     else:
         replay_dir = artifact_dir / 'replays'
         # step = step or find_latest_idx(artifact_dir)
@@ -98,7 +98,7 @@ def get_replay_dir(artifact_dir: Path | None = None, step: int | None = None) ->
 
 
 def get_headless_console_kwargs(
-    emulator_path: str | Path = PATHS.exe,
+    emulator_path: str | Path = EXE,
     enable_ffw: bool = True,
     udp_port: int | None = None,
     replay_dir: Path | None = None,
@@ -336,7 +336,7 @@ class EmulatorManager:
         """
         # Run the console
         self.console.run(
-            iso_path=str(PATHS.iso),
+            iso_path=str(ISO),
         )  # Do not pass dolphin_user_path to avoid overwriting init kwargs
         # Connect to the console
         logger.debug('Connecting to console...')

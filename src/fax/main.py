@@ -5,7 +5,7 @@ from loguru import logger
 from fax.utils import generate_random_inputs
 from fax.emulator_helper import EmulatorManager, find_open_udp_ports
 from fax.gamestate_utils import extract_eval_gamestate_as_tensordict
-from fax.paths import PATHS
+from fax.paths import REPLAYS
 
 
 def main():
@@ -13,7 +13,7 @@ def main():
     emulator_manager = EmulatorManager(
         udp_port=udp_port,
         player='p1',
-        replay_dir=PATHS.replays,
+        replay_dir=REPLAYS,
         debug=True,
         opponent_cpu_level=0,
     )
