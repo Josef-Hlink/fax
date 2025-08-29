@@ -3,7 +3,6 @@
 import json
 from pathlib import Path
 from typing import Dict
-from typing import Union
 
 import attr
 
@@ -18,9 +17,9 @@ class FeatureStats:
     max: float
 
 
-def load_dataset_stats(path: Union[str, Path]) -> Dict[str, FeatureStats]:
+def load_dataset_stats(path: Path) -> Dict[str, FeatureStats]:
     """Load the dataset statistics from a JSON file."""
-    with open(path, 'r', encoding='utf-8') as f:
+    with open(Path(path) / 'stats.json', 'r', encoding='utf-8') as f:
         data = json.load(f)
     dataset_stats = {}
     for k, v in data.items():
