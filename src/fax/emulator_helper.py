@@ -1,29 +1,21 @@
 # largely copied from https://github.com/ericyuegu/hal
 
-import concurrent.futures
-import psutil
-import platform
-import random
-import signal
-import subprocess
 import sys
 import time
+import signal
 import traceback
-from concurrent.futures import TimeoutError
-from contextlib import contextmanager
+import concurrent.futures
 from pathlib import Path
 from typing import Any, Dict, Generator, List, Optional, Tuple
+from contextlib import contextmanager
+from concurrent.futures import TimeoutError
 
 import attr
 import melee
-
-# from hal.training.io import find_latest_idx, get_path_friendly_datetime
+import psutil
 from loguru import logger
-from melee import enums
 
 from fax.constants import ORIGINAL_BUTTONS, PLAYER_1_PORT, PLAYER_2_PORT, Player, get_opponent
-
-# from hal.eval.eval_helper import EpisodeStats, Matchup
 from fax.eval_helper import EpisodeStats, Matchup
 from fax.paths import EXE, ISO, REPLAYS
 
@@ -32,7 +24,18 @@ def _get_console_port(player: Player) -> int:
     return PLAYER_1_PORT if player == 'p1' else PLAYER_2_PORT
 
 
+def find_latest_idx(artifact_dir: Path) -> int:
+    all_ckpts = artifact_dir.glob('*.pt')
+    try:
+        filename = max(str(x) for x in all_ckpts)
+        idx = int(Path(filename).stem.split('.')[0])
+        return idx
+    except ValueError:
+        return 0
+
+
 def find_open_udp_ports(n: int, min_port=1024, max_port=65535) -> list[int]:
+    """Only tested on Linux."""
     used_ports = set()
     for conn in psutil.net_connections(kind='udp'):
         if conn.laddr and isinstance(conn.laddr, tuple):
@@ -46,51 +49,12 @@ def find_open_udp_ports(n: int, min_port=1024, max_port=65535) -> list[int]:
     return open_ports
 
 
-# def find_open_udp_ports(num: int) -> List[int]:
-#     min_port = 10_000
-#     max_port = 2**16
-#
-#     system = platform.system()
-#     if system == 'Linux':
-#         netstat_command = ['netstat', '-an', '--udp']
-#         port_delimiter = ':'
-#     elif system == 'Darwin':
-#         netstat_command = ['netstat', '-an', '-p', 'udp']
-#         port_delimiter = '.'
-#     else:
-#         raise NotImplementedError(f'Unsupported system "{system}"')
-#
-#     netstat = subprocess.check_output(netstat_command)
-#     lines = netstat.decode().split('\n')[2:]
-#
-#     used_ports = set()
-#     for line in lines:
-#         words = line.split()
-#         if not words:
-#             continue
-#
-#         address, port = words[3].rsplit(port_delimiter, maxsplit=1)
-#         if port == '*':
-#             # TODO: what does this mean? Seems to only happen on Darwin.
-#             continue
-#
-#         if address in ('::', 'localhost', '0.0.0.0', '*'):
-#             used_ports.add(int(port))
-#
-#     available_ports = set(range(min_port, max_port)) - used_ports
-#
-#     if len(available_ports) < num:
-#         raise RuntimeError('Not enough available ports.')
-#
-#     return random.sample(list(available_ports), num)
-
-
 def get_replay_dir(artifact_dir: Path | None = None, step: int | None = None) -> Path:
     if artifact_dir is None:
         replay_dir = Path(REPLAYS)
     else:
         replay_dir = artifact_dir / 'replays'
-        # step = step or find_latest_idx(artifact_dir)
+        step = step or find_latest_idx(artifact_dir)
 
     if step is not None:
         replay_dir = replay_dir / f'{step:012d}'
@@ -176,12 +140,12 @@ class MatchupMenuHelper:
         If character_2 or stage_selected is None, the function will wait for human user.
         """
         menu_helper = melee.menuhelper.MenuHelper()
-        if gamestate.menu_state == enums.Menu.MAIN_MENU:
+        if gamestate.menu_state == melee.enums.Menu.MAIN_MENU:
             melee.menuhelper.MenuHelper.choose_versus_mode(
                 gamestate=gamestate, controller=self.controller_1
             )
         # If we're at the character select screen, choose our character
-        elif gamestate.menu_state == enums.Menu.CHARACTER_SELECT:
+        elif gamestate.menu_state == melee.enums.Menu.CHARACTER_SELECT:
             menu_helper.choose_character(
                 character=self.character_1,
                 gamestate=gamestate,
@@ -203,7 +167,7 @@ class MatchupMenuHelper:
                 start=True,
             )
         # If we're at the stage select screen, choose a stage
-        elif gamestate.menu_state == enums.Menu.STAGE_SELECT:
+        elif gamestate.menu_state == melee.enums.Menu.STAGE_SELECT:
             if self.stage is None:
                 return
             menu_helper.choose_stage(
@@ -213,7 +177,7 @@ class MatchupMenuHelper:
                 character=self.character_1,
             )
         # If we're at the postgame scores screen, spam START
-        elif gamestate.menu_state == enums.Menu.POSTGAME_SCORES:
+        elif gamestate.menu_state == melee.enums.Menu.POSTGAME_SCORES:
             menu_helper.skip_postgame(controller=self.controller_1)
 
 

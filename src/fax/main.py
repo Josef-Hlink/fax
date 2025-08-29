@@ -2,6 +2,8 @@
 
 from loguru import logger
 
+import melee
+
 from fax.utils import generate_random_inputs
 from fax.emulator_helper import EmulatorManager, find_open_udp_ports
 from fax.gamestate_utils import extract_eval_gamestate_as_tensordict

@@ -1,19 +1,17 @@
 from collections import defaultdict
-from typing import Any
-from typing import DefaultDict
-from typing import Dict
-from typing import MutableSequence
-from typing import Optional
+from typing import Any, DefaultDict, Dict, MutableSequence, Optional
 
 import melee
 import torch
 from tensordict import TensorDict
 
-from fax.constants import IDX_BY_ACTION
-from fax.constants import IDX_BY_CHARACTER
-from fax.constants import IDX_BY_STAGE
-from fax.constants import INCLUDED_CHARACTERS
-from fax.constants import INCLUDED_STAGES
+from fax.constants import (
+    IDX_BY_ACTION,
+    IDX_BY_CHARACTER,
+    IDX_BY_STAGE,
+    INCLUDED_CHARACTERS,
+    INCLUDED_STAGES,
+)
 
 FrameData = DefaultDict[str, MutableSequence[Any]]
 

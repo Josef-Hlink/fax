@@ -62,16 +62,3 @@ def controller_output_from_model(output: dict) -> dict:
             'BUTTON_R': buttons[6],
         },
     }
-
-
-def compute_reward(td: TensorDict) -> float:
-    p1_x = float(td['p1_position_x'])
-    p1_y = float(td['p1_position_y'])
-    p2_x = float(td['p2_position_x'])
-    p2_y = float(td['p2_position_y'])
-
-    dx = p2_x - p1_x
-    dy = p2_y - p1_y
-    distance = (dx**2 + dy**2) ** 0.5
-
-    return -distance  # Reward is higher when closer
