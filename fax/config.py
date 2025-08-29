@@ -40,6 +40,10 @@ class TrainConfig:
         return (self.beta1, self.beta2)
 
 
+def check_required(field: Any) -> bool:
+    return field.default is attr.NOTHING or (field.type == str and field.default == '')
+
+
 def create_parser(cls: Type[Any], parser: ArgumentParser, prefix: str = '') -> ArgumentParser:
     for field in attr.fields(cls):
         arg_name = f'--{prefix}{field.name.replace("_", "-")}'
@@ -57,7 +61,7 @@ def create_parser(cls: Type[Any], parser: ArgumentParser, prefix: str = '') -> A
                     type=field.type,
                     default=field.default if field.default is not attr.NOTHING else None,
                     help=field.metadata.get('help', ''),
-                    required=field.default is attr.NOTHING,
+                    required=check_required(field),
                 )
 
     return parser
