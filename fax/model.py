@@ -279,3 +279,42 @@ class _BlockRelativePosition(nn.Module):
         x = x + self.attn(self.ln_1(x))
         x = x + self.mlp(self.ln_2(x))
         return x
+
+
+if __name__ == '__main__':
+    # simple test with random tensors
+
+    model = Model(
+        preprocessor=Preprocessor(DataConfig('~/Data/mds/full')),
+        gpt_config=GPTConfig(
+            block_size=16,
+            n_embd=128,
+            n_layer=2,
+            n_head=4,
+            dropout=0.1,
+            bias=True,
+        ),
+    )
+    print(model.preprocessor.stats)
+    B, L = 2, 10
+    inputs = TensorDict(
+        {
+            'stage': torch.randint(0, NUM_STAGES, (B, 1)),
+            'ego_character': torch.randint(0, NUM_CHARACTERS, (B, 1)),
+            'opponent_character': torch.randint(0, NUM_CHARACTERS, (B, 1)),
+            'ego_action': torch.randint(0, NUM_ACTIONS, (B, 1)),
+            'opponent_action': torch.randint(0, NUM_ACTIONS, (B, 1)),
+            'gamestate': torch.randn(
+                B, L, model.preprocessor.input_size - 2 * CHARACTER_EMBEDDING_DIM
+            ),
+            'controller': torch.randn(
+                B, L, model.preprocessor.input_size - 2 * CHARACTER_EMBEDDING_DIM
+            ),
+        },
+        batch_size=(B,),
+    )
+    outputs = model(inputs)
+    for k, v in outputs.items():
+        print(k, v.shape)
+    # should be (B, L, out_dim) for each head
+    print('Model test passed.')
