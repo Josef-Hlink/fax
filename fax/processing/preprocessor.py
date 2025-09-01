@@ -35,7 +35,7 @@ class Preprocessor:
 
     def __init__(self, data_config: DataConfig) -> None:
         self.data_config = data_config
-        self.stats = load_dataset_stats(Path(data_config.dir))
+        self.stats = load_dataset_stats(Path(data_config.dir).expanduser())
         self.normalization_fn_by_feature_name: Dict[str, Transformation] = {}  # TODO: check used
         self.seq_len = data_config.seq_len
 
