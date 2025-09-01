@@ -1,21 +1,64 @@
 # largely copied from https://github.com/ericyuegu/hal
 
-from typing import Callable
+from typing import cast, Callable, Dict, List, Mapping
 
 import numpy as np
 import torch
 from tensordict import TensorDict
 
+from .configs import TargetConfig
+from fax.stats import FeatureStats
 from fax.constants import (
+    Player,
+    INCLUDED_BUTTONS,
     STICK_XY_CLUSTER_CENTERS_V0,
     SHOULDER_CLUSTER_CENTERS_V0,
 )
 
-
+# for type hinting
 Transformation = Callable[..., torch.Tensor]
 
+# SIMPLE PUBLIC TRANSFORMATIONS
 
-def get_closest_2D_cluster(x: np.ndarray, y: np.ndarray, cluster_centers: np.ndarray) -> np.ndarray:
+
+def cast_int32(array: torch.Tensor, stats: FeatureStats) -> torch.Tensor:
+    """Identity function; cast to int32."""
+    _ = stats  # unused
+    return array.to(torch.int32)
+
+
+def normalize(array: torch.Tensor, stats: FeatureStats) -> torch.Tensor:
+    """Normalize feature [-1, 1]."""
+    return (2 * (array - stats.min) / (stats.max - stats.min) - 1).to(torch.float32)
+
+
+def invert_and_normalize(array: torch.Tensor, stats: FeatureStats) -> torch.Tensor:
+    """Invert and normalize feature to [-1, 1]."""
+    return (2 * (stats.max - array) / (stats.max - stats.min) - 1).to(torch.float32)
+
+
+def standardize(array: torch.Tensor, stats: FeatureStats) -> torch.Tensor:
+    """Standardize feature to mean 0 and std 1."""
+    return ((array - stats.mean) / stats.std).to(torch.float32)
+
+
+def union(array_1: torch.Tensor, array_2: torch.Tensor) -> torch.Tensor:
+    """Perform logical OR of two features."""
+    return array_1 | array_2
+
+
+def concat_controller_inputs(
+    sample_T: TensorDict, ego: Player, target_config: TargetConfig
+) -> torch.Tensor:
+    controller_feats = cast(
+        Mapping[str, torch.Tensor], preprocess_target_features(sample_T, ego, target_config)
+    )
+    return torch.cat(tuple(controller_feats.values()), dim=-1)
+
+
+def _get_closest_2D_cluster(
+    x: np.ndarray, y: np.ndarray, cluster_centers: np.ndarray
+) -> np.ndarray:
     """
     Calculate the closest point in cluster_centers for given x and y values.
 
@@ -37,16 +80,6 @@ def one_hot_from_int(arr: np.ndarray, num_values: int) -> np.ndarray:
     One-hot encode array of integers.
     """
     return np.eye(num_values)[arr]
-
-
-def encode_main_stick_one_hot_coarse(sample: TensorDict, player: str) -> torch.Tensor:
-    main_stick_x = sample[f'{player}_main_stick_x']
-    main_stick_y = sample[f'{player}_main_stick_y']
-    main_stick_clusters = get_closest_2D_cluster(
-        main_stick_x, main_stick_y, STICK_XY_CLUSTER_CENTERS_V0
-    )
-    one_hot_main_stick = one_hot_from_int(main_stick_clusters, len(STICK_XY_CLUSTER_CENTERS_V0))
-    return torch.tensor(one_hot_main_stick, dtype=torch.float32)
 
 
 def get_closest_1D_cluster(x: np.ndarray, cluster_centers: np.ndarray) -> np.ndarray:
@@ -116,10 +149,23 @@ def convert_multi_hot_to_one_hot(buttons_LD: np.ndarray) -> np.ndarray:
     return buttons_LD
 
 
+# PREPROCESSING
+
+
+def encode_main_stick_one_hot_coarse(sample: TensorDict, player: str) -> torch.Tensor:
+    main_stick_x = sample[f'{player}_main_stick_x']
+    main_stick_y = sample[f'{player}_main_stick_y']
+    main_stick_clusters = _get_closest_2D_cluster(
+        main_stick_x, main_stick_y, STICK_XY_CLUSTER_CENTERS_V0
+    )
+    one_hot_main_stick = one_hot_from_int(main_stick_clusters, len(STICK_XY_CLUSTER_CENTERS_V0))
+    return torch.tensor(one_hot_main_stick, dtype=torch.float32)
+
+
 def encode_c_stick_one_hot_coarse(sample: TensorDict, player: str) -> torch.Tensor:
     c_stick_x = sample[f'{player}_c_stick_x']
     c_stick_y = sample[f'{player}_c_stick_y']
-    c_stick_clusters = get_closest_2D_cluster(c_stick_x, c_stick_y, STICK_XY_CLUSTER_CENTERS_V0)
+    c_stick_clusters = _get_closest_2D_cluster(c_stick_x, c_stick_y, STICK_XY_CLUSTER_CENTERS_V0)
     one_hot_c_stick = one_hot_from_int(c_stick_clusters, len(STICK_XY_CLUSTER_CENTERS_V0))
     return torch.tensor(one_hot_c_stick, dtype=torch.float32)
 
@@ -150,3 +196,51 @@ def encode_buttons_one_hot(sample: TensorDict, player: str) -> torch.Tensor:
     stacked_buttons = torch.stack((button_a, button_b, jump, button_z, shoulder, no_button), dim=-1)
     one_hot_buttons = convert_multi_hot_to_one_hot(stacked_buttons.numpy())
     return torch.tensor(one_hot_buttons, dtype=torch.float32)
+
+
+# POSTPROCESSING
+
+
+def sample_main_stick_coarse(pred_C: TensorDict, temperature: float = 1.0) -> tuple[float, float]:
+    main_stick_probs = torch.softmax(pred_C['main_stick'] / temperature, dim=-1)
+    main_stick_cluster_idx = torch.multinomial(main_stick_probs, num_samples=1)
+    main_stick_x, main_stick_y = torch.split(
+        torch.tensor(STICK_XY_CLUSTER_CENTERS_V0[main_stick_cluster_idx]), 1, dim=-1
+    )
+
+    return main_stick_x.item(), main_stick_y.item()
+
+
+def sample_c_stick_coarse(pred_C: TensorDict, temperature: float = 1.0) -> tuple[float, float]:
+    c_stick_probs = torch.softmax(pred_C['c_stick'] / temperature, dim=-1)
+    c_stick_cluster_idx = torch.multinomial(c_stick_probs, num_samples=1)
+    c_stick_x, c_stick_y = torch.split(
+        torch.tensor(STICK_XY_CLUSTER_CENTERS_V0[c_stick_cluster_idx]), 1, dim=-1
+    )
+
+    return c_stick_x.item(), c_stick_y.item()
+
+
+def sample_single_button(pred_C: TensorDict, temperature: float = 1.0) -> List[str]:
+    button_probs = torch.softmax(pred_C['buttons'] / temperature, dim=-1)
+    button_idx = int(torch.multinomial(button_probs, num_samples=1).item())
+    button = INCLUDED_BUTTONS[button_idx]
+    return [button]
+
+
+def sample_analog_shoulder_coarse(pred_C: TensorDict, temperature: float = 1.0) -> float:
+    shoulder_probs = torch.softmax(pred_C['shoulder'] / temperature, dim=-1)
+    shoulder_idx = int(torch.multinomial(shoulder_probs, num_samples=1).item())
+    shoulder = SHOULDER_CLUSTER_CENTERS_V0[shoulder_idx]
+    return shoulder
+
+
+def preprocess_target_features(
+    sample_T: TensorDict, ego: Player, target_config: TargetConfig
+) -> TensorDict:
+    processed_features: Dict[str, torch.Tensor] = {}
+
+    for feature_name, transformation in target_config.transformation_by_target.items():
+        processed_features[feature_name] = transformation(sample_T, ego)
+
+    return TensorDict(processed_features, batch_size=sample_T.batch_size)

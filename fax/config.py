@@ -18,6 +18,7 @@ class DataConfig:
     dir: str = ''
     seq_len: int = 2**8
     max_samples: int = -1  # -1 means no limit
+    gamma: float = 0.999  # for discounted returns in preprocessing
 
 
 @attr.s(auto_attribs=True, frozen=True)

@@ -445,3 +445,13 @@ STICK_XY_CLUSTER_CENTERS_V3 = np.array(
     ]
 )
 STICK_XY_CLUSTER_CENTERS_V3.flags.writeable = False
+
+
+# --- Below determines model input/output head shape ---
+# Categorical input embedding sizes
+NUM_STAGES: int = len(IDX_BY_STAGE)
+NUM_CHARACTERS: int = len(IDX_BY_CHARACTER)
+NUM_ACTIONS: int = len(IDX_BY_ACTION)
+STAGE_EMBEDDING_DIM: int = 4
+CHARACTER_EMBEDDING_DIM: int = 12
+ACTION_EMBEDDING_DIM: int = 32
