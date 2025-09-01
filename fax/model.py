@@ -35,11 +35,11 @@ from fax.config import DataConfig
 
 @dataclass
 class GPTConfig:
-    block_size: int
-    n_embd: int
-    n_layer: int
-    n_head: int
-    dropout: float = 0.0
+    block_size: int = 1024
+    n_embd: int = 512
+    n_layer: int = 6
+    n_head: int = 8
+    dropout: float = 0.2
     bias: bool = True  # bias in Linear/LayerNorm (GPT-2 style)
 
 
@@ -286,14 +286,7 @@ if __name__ == '__main__':
 
     model = Model(
         preprocessor=Preprocessor(DataConfig('~/Data/mds/full')),
-        gpt_config=GPTConfig(
-            block_size=16,
-            n_embd=128,
-            n_layer=2,
-            n_head=4,
-            dropout=0.1,
-            bias=True,
-        ),
+        gpt_config=GPTConfig(),
     )
     # batch size and sequence length
     B, L = 2, 10
