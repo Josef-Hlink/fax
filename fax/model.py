@@ -29,7 +29,8 @@ from fax.constants import (
     NUM_ACTIONS,
     ACTION_EMBEDDING_DIM,
 )
-from fax.processing import Preprocessor
+from fax.processing.preprocessor import Preprocessor
+from fax.config import DataConfig
 
 
 @dataclass

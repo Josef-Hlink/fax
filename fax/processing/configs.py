@@ -1,16 +1,16 @@
 # largely copied from https://github.com/ericyuegu/hal
 
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple, Mapping, cast
 from functools import partial
 
 import attr
+import torch
 import numpy as np
 from tensordict import TensorDict
 
 from .transformations import (
     Transformation,
     cast_int32,
-    concat_controller_inputs,
     invert_and_normalize,
     normalize,
     standardize,
@@ -24,6 +24,7 @@ from .transformations import (
     sample_analog_shoulder_coarse,
 )
 from fax.constants import (
+    Player,
     STAGE_EMBEDDING_DIM,
     CHARACTER_EMBEDDING_DIM,
     ACTION_EMBEDDING_DIM,
@@ -219,3 +220,23 @@ def get_postprocess_config() -> PostprocessConfig:
             'shoulder': sample_analog_shoulder_coarse,
         }
     )
+
+
+def preprocess_target_features(
+    sample_T: TensorDict, ego: Player, target_config: TargetConfig
+) -> TensorDict:
+    processed_features: Dict[str, torch.Tensor] = {}
+
+    for feature_name, transformation in target_config.transformation_by_target.items():
+        processed_features[feature_name] = transformation(sample_T, ego)
+
+    return TensorDict(processed_features, batch_size=sample_T.batch_size)
+
+
+def concat_controller_inputs(
+    sample_T: TensorDict, ego: Player, target_config: TargetConfig
+) -> torch.Tensor:
+    controller_feats = cast(
+        Mapping[str, torch.Tensor], preprocess_target_features(sample_T, ego, target_config)
+    )
+    return torch.cat(tuple(controller_feats.values()), dim=-1)

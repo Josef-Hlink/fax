@@ -1,15 +1,13 @@
 # largely copied from https://github.com/ericyuegu/hal
 
-from typing import cast, Callable, Dict, List, Mapping
+from typing import Callable, List
 
 import numpy as np
 import torch
 from tensordict import TensorDict
 
-from .configs import TargetConfig
 from fax.stats import FeatureStats
 from fax.constants import (
-    Player,
     INCLUDED_BUTTONS,
     STICK_XY_CLUSTER_CENTERS_V0,
     SHOULDER_CLUSTER_CENTERS_V0,
@@ -45,15 +43,6 @@ def standardize(array: torch.Tensor, stats: FeatureStats) -> torch.Tensor:
 def union(array_1: torch.Tensor, array_2: torch.Tensor) -> torch.Tensor:
     """Perform logical OR of two features."""
     return array_1 | array_2
-
-
-def concat_controller_inputs(
-    sample_T: TensorDict, ego: Player, target_config: TargetConfig
-) -> torch.Tensor:
-    controller_feats = cast(
-        Mapping[str, torch.Tensor], preprocess_target_features(sample_T, ego, target_config)
-    )
-    return torch.cat(tuple(controller_feats.values()), dim=-1)
 
 
 def _get_closest_2D_cluster(
@@ -233,14 +222,3 @@ def sample_analog_shoulder_coarse(pred_C: TensorDict, temperature: float = 1.0) 
     shoulder_idx = int(torch.multinomial(shoulder_probs, num_samples=1).item())
     shoulder = SHOULDER_CLUSTER_CENTERS_V0[shoulder_idx]
     return shoulder
-
-
-def preprocess_target_features(
-    sample_T: TensorDict, ego: Player, target_config: TargetConfig
-) -> TensorDict:
-    processed_features: Dict[str, torch.Tensor] = {}
-
-    for feature_name, transformation in target_config.transformation_by_target.items():
-        processed_features[feature_name] = transformation(sample_T, ego)
-
-    return TensorDict(processed_features, batch_size=sample_T.batch_size)

@@ -12,8 +12,9 @@ from .configs import (
     get_target_config,
     PostprocessConfig,
     get_postprocess_config,
+    preprocess_target_features,
 )
-from .transformations import Transformation, preprocess_target_features
+from .transformations import Transformation
 from fax.constants import Player, get_opponent
 from fax.config import DataConfig
 from fax.stats import FeatureStats, load_dataset_stats
