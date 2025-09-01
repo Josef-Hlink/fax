@@ -295,25 +295,30 @@ if __name__ == '__main__':
             bias=True,
         ),
     )
-    print(model.preprocessor.stats)
+    # batch size and sequence length
     B, L = 2, 10
+
+    # Get the correct dimensions from the input config
+    gamestate_dim = model.preprocessor.input_config.input_shapes_by_head['gamestate'][0]  # 18
+    controller_dim = model.preprocessor.input_config.input_shapes_by_head['controller'][0]  # 48
+
     inputs = TensorDict(
         {
-            'stage': torch.randint(0, NUM_STAGES, (B, 1)),
-            'ego_character': torch.randint(0, NUM_CHARACTERS, (B, 1)),
-            'opponent_character': torch.randint(0, NUM_CHARACTERS, (B, 1)),
-            'ego_action': torch.randint(0, NUM_ACTIONS, (B, 1)),
-            'opponent_action': torch.randint(0, NUM_ACTIONS, (B, 1)),
-            'gamestate': torch.randn(
-                B, L, model.preprocessor.input_size - 2 * CHARACTER_EMBEDDING_DIM
-            ),
-            'controller': torch.randn(
-                B, L, model.preprocessor.input_size - 2 * CHARACTER_EMBEDDING_DIM
-            ),
+            'stage': torch.randint(0, NUM_STAGES, (B, L)),
+            'ego_character': torch.randint(0, NUM_CHARACTERS, (B, L)),
+            'opponent_character': torch.randint(0, NUM_CHARACTERS, (B, L)),
+            'ego_action': torch.randint(0, NUM_ACTIONS, (B, L)),
+            'opponent_action': torch.randint(0, NUM_ACTIONS, (B, L)),
+            'gamestate': torch.randn(B, L, gamestate_dim),
+            'controller': torch.randn(B, L, controller_dim),
         },
         batch_size=(B,),
     )
+    print('inputs:')
+    for k, v in inputs.items():
+        print(k, v.shape)
     outputs = model(inputs)
+    print('outputs:')
     for k, v in outputs.items():
         print(k, v.shape)
     # should be (B, L, out_dim) for each head
