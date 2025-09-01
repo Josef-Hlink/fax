@@ -13,6 +13,7 @@
 #   "ego_action", "opponent_action", "gamestate", "controller"
 
 from __future__ import annotations
+from typing import cast
 import math
 from dataclasses import dataclass
 
@@ -126,11 +127,11 @@ class Model(nn.Module):
         assert L <= self.block_size, f'seq len {L} > block_size {self.block_size}'
 
         x = self._embed_inputs(inputs)  # (B, L, G_cat)
-        x = self.transformer.proj_down(x)  # (B, L, D)
-        x = self.transformer.drop(x)
-        for block in self.transformer.h:
+        x = cast(nn.Linear, self.transformer['proj_down'])(x)  # (B, L, D)
+        x = cast(nn.Dropout, self.transformer['drop'])(x)
+        for block in cast(nn.ModuleList, self.transformer['h']):
             x = block(x)
-        x = self.transformer.ln_f(x)  # (B, L, D)
+        x = cast(nn.LayerNorm, self.transformer['ln_f'])(x)  # (B, L, D)
 
         # decode with detached chaining
         c_stick = self.c_stick_head(x)
@@ -231,6 +232,7 @@ class _CausalSelfAttentionRelativePosition(nn.Module):
         self.attn_dropout = nn.Dropout(self.dropout)
         self.resid_dropout = nn.Dropout(self.dropout)
 
+        self.bias: torch.Tensor
         self.register_buffer(
             'bias',
             torch.tril(torch.ones(self.block_size, self.block_size)).view(
