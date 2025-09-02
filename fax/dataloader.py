@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import random
 from pathlib import Path
-from typing import Iterator, Any, Dict, Sequence, Tuple
+from typing import Sequence, Tuple
 
 import torch
 from streaming import StreamingDataset, StreamingDataLoader
@@ -13,7 +13,6 @@ from tensordict import TensorDict
 from fax.config import TrainConfig, DataConfig
 from fax.constants import Player
 from fax.processing.preprocessor import Preprocessor, convert_ndarray_to_tensordict
-from fax.stats import load_dataset_stats
 
 
 def collate_tensordicts(batch: Sequence[TensorDict]) -> TensorDict:
@@ -81,23 +80,7 @@ class FAXStreamingDataset(StreamingDataset):
         }, batch_size=())
 
 
-class MDSDataLoader:
-    """Legacy simple dataloader - kept for debugging."""
-    def __init__(self, data_dir: Path, split: str = 'train'):
-        self.data_dir = data_dir
-        self.split = split
-        self.stats = load_dataset_stats(data_dir)
-        print(f'[MDSDataLoader] init: dir={data_dir!r} split={split}')
-        print(f'[MDSDataLoader] init: stats keys={list(self.stats.keys())[:3]}')
-        # NOTE: maybe investigate batch size
-        self.ds = StreamingDataset(
-            local=data_dir.as_posix(), remote=None, split=split, shuffle=False, batch_size=1024
-        )
 
-    def __iter__(self) -> Iterator[Dict[str, Any]]:
-        print('[MDSDataLoader] iter: starting stream')
-        for sample in self.ds:
-            yield sample
 
 
 def get_dataloaders(config: TrainConfig) -> Tuple[StreamingDataLoader, StreamingDataLoader]:
@@ -173,63 +156,48 @@ def load_dataloader_state(loader: StreamingDataLoader, path: Path) -> None:
 
 
 if __name__ == '__main__':
-    # Test the new dataloader with preprocessing
+    # Test the dataloader with preprocessing
     import argparse
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--data-dir', type=str, required=True, help='Path to MDS data directory')
-    parser.add_argument('--test-old', action='store_true', help='Test old MDSDataLoader instead')
     parser.add_argument('--batch-size', type=int, default=4, help='Batch size for testing')
     parser.add_argument('--seq-len', type=int, default=64, help='Sequence length')
     args = parser.parse_args()
 
-    if args.test_old:
-        # Test old dataloader
-        print('[main] Testing old MDSDataLoader...')
-        loader = MDSDataLoader(Path(args.data_dir), split='train')
-        for i, s in enumerate(loader):
-            keys = list(s.keys())
-            head = keys[:3]
-            print(f'[main] sample #{i + 1}: keys={head}{" ..." if len(keys) > 10 else ""}')
-            shapes = {k: getattr(s[k], 'shape', None) for k in head}
-            print(f'[main] shapes: {shapes}')
-            if i >= 2:
-                break
-    else:
-        # Test new dataloader with preprocessing
-        print('[main] Testing new FAXStreamingDataset with preprocessing...')
+    print('[main] Testing FAXStreamingDataset with preprocessing...')
 
-        # Create config
-        data_config = DataConfig(dir=args.data_dir, seq_len=args.seq_len)
-        train_config = TrainConfig(data=data_config, batch_size=args.batch_size)
+    # Create config
+    data_config = DataConfig(dir=args.data_dir, seq_len=args.seq_len)
+    train_config = TrainConfig(data=data_config, batch_size=args.batch_size)
 
-        # Get dataloaders
-        train_loader, val_loader = get_dataloaders(train_config)
+    # Get dataloaders
+    train_loader, val_loader = get_dataloaders(train_config)
 
-        print(f'[main] Created dataloaders with batch_size={args.batch_size}, seq_len={args.seq_len}')
-        print(f'[main] Testing train loader...')
+    print(f'[main] Created dataloaders with batch_size={args.batch_size}, seq_len={args.seq_len}')
+    print(f'[main] Testing train loader...')
 
-        for i, batch in enumerate(train_loader):
-            print(f'[main] Batch #{i + 1}:')
-            print(f'  batch.shape: {batch.shape}')
-            print(f'  batch.keys(): {list(batch.keys())}')
+    for i, batch in enumerate(train_loader):
+        print(f'[main] Batch #{i + 1}:')
+        print(f'  batch.shape: {batch.shape}')
+        print(f'  batch.keys(): {list(batch.keys())}')
 
-            inputs = batch['inputs']
-            targets = batch['targets']
+        inputs = batch['inputs']
+        targets = batch['targets']
 
-            print(f'  inputs.keys(): {list(inputs.keys())}')
-            print(f'  targets.keys(): {list(targets.keys())}')
+        print(f'  inputs.keys(): {list(inputs.keys())}')
+        print(f'  targets.keys(): {list(targets.keys())}')
 
-            # Print shapes of a few key features
-            for key in ['stage', 'ego_character', 'gamestate', 'controller']:
-                if key in inputs:
-                    print(f'  inputs[{key}].shape: {inputs[key].shape}')
+        # Print shapes of a few key features
+        for key in ['stage', 'ego_character', 'gamestate', 'controller']:
+            if key in inputs:
+                print(f'  inputs[{key}].shape: {inputs[key].shape}')
 
-            for key in ['main_stick', 'c_stick', 'buttons']:
-                if key in targets:
-                    print(f'  targets[{key}].shape: {targets[key].shape}')
+        for key in ['main_stick', 'c_stick', 'buttons']:
+            if key in targets:
+                print(f'  targets[{key}].shape: {targets[key].shape}')
 
-            if i >= 1:  # Test just 2 batches
-                break
+        if i >= 1:  # Test just 2 batches
+            break
 
-        print('[main] Dataloader test completed successfully!')
+    print('[main] Dataloader test completed successfully!')
