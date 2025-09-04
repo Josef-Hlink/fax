@@ -15,9 +15,9 @@ import torch.nn.functional as F
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
-from fax.config import DataConfig, TrainConfig
+from fax.config import BaseConfig, DataConfig, ModelConfig, TrainConfig, create_parser, parse_args
 from fax.dataloader import get_dataloaders
-from fax.model import Model, GPTConfig
+from fax.model import Model
 from fax.processing.preprocessor import Preprocessor
 
 
@@ -146,44 +146,53 @@ def validate(model, val_loader, device):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Train FAX model')
-    parser.add_argument('--data-dir', type=str, required=True, help='Path to MDS data directory')
-    parser.add_argument('--batch-size', type=int, default=16, help='Batch size')
-    parser.add_argument('--seq-len', type=int, default=128, help='Sequence length')
-    parser.add_argument('--epochs', type=int, default=5, help='Number of epochs')
-    parser.add_argument('--lr', type=float, default=3e-4, help='Learning rate')
-    parser.add_argument('--device', type=str, default='auto', help='Device (cuda/cpu/auto)')
-    parser.add_argument('--model-dim', type=int, default=256, help='Model embedding dimension')
-    parser.add_argument('--num-layers', type=int, default=4, help='Number of transformer layers')
-    parser.add_argument('--num-heads', type=int, default=8, help='Number of attention heads')
+    # parser = argparse.ArgumentParser(description='Train FAX model')
+    # parser.add_argument('--data-dir', type=str, required=True, help='Path to MDS data directory')
+    # parser.add_argument('--batch-size', type=int, default=16, help='Batch size')
+    # parser.add_argument('--seq-len', type=int, default=128, help='Sequence length')
+    # parser.add_argument('--epochs', type=int, default=5, help='Number of epochs')
+    # parser.add_argument('--lr', type=float, default=3e-4, help='Learning rate')
+    # parser.add_argument('--device', type=str, default='auto', help='Device (cuda/cpu/auto)')
+    # parser.add_argument('--model-dim', type=int, default=256, help='Model embedding dimension')
+    # parser.add_argument('--num-layers', type=int, default=4, help='Number of transformer layers')
+    # parser.add_argument('--num-heads', type=int, default=8, help='Number of attention heads')
+    #
+    # args = parser.parse_args()
+    #
+    # # Setup device
+    # if args.device == 'auto':
+    #     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    # else:
+    #     device = torch.device(args.device)
+    #
+    # print(f'Using device: {device}')
+    #
+    # # Create configs
+    # data_config = DataConfig(dir=args.data_dir, seq_len=args.seq_len)
+    # train_config = TrainConfig(
+    #     data=data_config, batch_size=args.batch_size, lr=args.lr, n_epochs=args.epochs
+    # )
+    #
+    # Create model
 
+    parser = argparse.ArgumentParser()
+    parser = create_parser(BaseConfig, parser)
+    parser = create_parser(TrainConfig, parser, prefix='train.')
     args = parser.parse_args()
 
-    # Setup device
-    if args.device == 'auto':
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    base_config = parse_args(BaseConfig, args)
+    train_config = parse_args(TrainConfig, args, prefix='train.')
+    data_config = train_config.data
+    model_config = train_config.model
+
+    if base_config.n_gpus > 1:
+        print(f'Using {base_config.n_gpus} GPUs')
+        device = torch.device('cuda')
     else:
-        device = torch.device(args.device)
+        device = torch.device('cpu')
 
-    print(f'Using device: {device}')
-
-    # Create configs
-    data_config = DataConfig(dir=args.data_dir, seq_len=args.seq_len)
-    train_config = TrainConfig(
-        data=data_config, batch_size=args.batch_size, lr=args.lr, n_epochs=args.epochs
-    )
-
-    # Create model
     preprocessor = Preprocessor(data_config)
-    gpt_config = GPTConfig(
-        block_size=args.seq_len,
-        n_embd=args.model_dim,
-        n_layer=args.num_layers,
-        n_head=args.num_heads,
-        dropout=0.1,
-        bias=True,
-    )
-    model = Model(preprocessor=preprocessor, gpt_config=gpt_config)
+    model = Model(preprocessor=preprocessor, config=model_config)
     model = model.to(device)
 
     # Print model info

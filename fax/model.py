@@ -31,7 +31,7 @@ from fax.constants import (
     ACTION_EMBEDDING_DIM,
 )
 from fax.processing.preprocessor import Preprocessor
-from fax.config import DataConfig
+from fax.config import DataConfig, ModelConfig
 
 
 @dataclass
@@ -50,13 +50,12 @@ class Model(nn.Module):
     Order: c_stick -> main_stick -> buttons -> shoulder (each head sees previous via detached concat).
     """
 
-    def __init__(self, preprocessor: Preprocessor, gpt_config: GPTConfig) -> None:
+    def __init__(self, preprocessor: Preprocessor, config: ModelConfig) -> None:
         super().__init__()
         self.preprocessor = preprocessor
-        self.gpt_config = gpt_config
-        self.block_size = gpt_config.block_size
+        self.block_size = config.block_size
         self.input_size = preprocessor.input_size
-        self.n_embd = gpt_config.n_embd
+        self.n_embd = config.n_embd
 
         self.stage_emb = nn.Embedding(NUM_STAGES, STAGE_EMBEDDING_DIM)
         self.character_emb = nn.Embedding(NUM_CHARACTERS, CHARACTER_EMBEDDING_DIM)
@@ -64,12 +63,10 @@ class Model(nn.Module):
 
         self.transformer = nn.ModuleDict(
             dict(
-                proj_down=nn.Linear(self.input_size, gpt_config.n_embd),
-                drop=nn.Dropout(gpt_config.dropout),
-                h=nn.ModuleList(
-                    [_BlockRelativePosition(gpt_config) for _ in range(gpt_config.n_layer)]
-                ),
-                ln_f=nn.LayerNorm(self.n_embd, bias=gpt_config.bias),
+                proj_down=nn.Linear(self.input_size, config.n_embd),
+                drop=nn.Dropout(config.dropout),
+                h=nn.ModuleList([_BlockRelativePosition(config) for _ in range(config.n_layer)]),
+                ln_f=nn.LayerNorm(self.n_embd, bias=True),
             )
         )
 
@@ -77,7 +74,7 @@ class Model(nn.Module):
         self.apply(self._init_weights)
         for pn, p in self.named_parameters():
             if pn.endswith('c_proj.weight'):
-                nn.init.normal_(p, mean=0.0, std=0.02 / math.sqrt(2 * gpt_config.n_layer))
+                nn.init.normal_(p, mean=0.0, std=0.02 / math.sqrt(2 * config.n_layer))
 
         tgt = preprocessor.target_config.target_shapes_by_head
         c_stick_in = self.n_embd
@@ -93,25 +90,25 @@ class Model(nn.Module):
         shoulder_out = tgt['shoulder'][0]
 
         self.c_stick_head = nn.Sequential(
-            nn.LayerNorm(c_stick_in, bias=gpt_config.bias),
+            nn.LayerNorm(c_stick_in, bias=True),
             nn.Linear(c_stick_in, c_stick_in // 2),
             nn.GELU(),
             nn.Linear(c_stick_in // 2, c_stick_out),
         )
         self.main_stick_head = nn.Sequential(
-            nn.LayerNorm(main_in, bias=gpt_config.bias),
+            nn.LayerNorm(main_in, bias=True),
             nn.Linear(main_in, main_in // 2),
             nn.GELU(),
             nn.Linear(main_in // 2, main_out),
         )
         self.button_head = nn.Sequential(
-            nn.LayerNorm(btn_in, bias=gpt_config.bias),
+            nn.LayerNorm(btn_in, bias=True),
             nn.Linear(btn_in, btn_in // 2),
             nn.GELU(),
             nn.Linear(btn_in // 2, btn_out),
         )
         self.shoulder_head = nn.Sequential(
-            nn.LayerNorm(shoulder_in, bias=gpt_config.bias),
+            nn.LayerNorm(shoulder_in, bias=True),
             nn.Linear(shoulder_in, shoulder_in // 2),
             nn.GELU(),
             nn.Linear(shoulder_in // 2, shoulder_out),
@@ -180,11 +177,11 @@ class Model(nn.Module):
 
 
 class _MLP(nn.Module):
-    def __init__(self, config: GPTConfig) -> None:
+    def __init__(self, config: ModelConfig) -> None:
         super().__init__()
-        self.c_fc = nn.Linear(config.n_embd, 4 * config.n_embd, bias=config.bias)
+        self.c_fc = nn.Linear(config.n_embd, 4 * config.n_embd, bias=True)
         self.gelu = nn.GELU()
-        self.c_proj = nn.Linear(4 * config.n_embd, config.n_embd, bias=config.bias)
+        self.c_proj = nn.Linear(4 * config.n_embd, config.n_embd, bias=True)
         self.dropout = nn.Dropout(config.dropout)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -216,7 +213,7 @@ def skew(QEr: torch.Tensor) -> torch.Tensor:
 class _CausalSelfAttentionRelativePosition(nn.Module):
     """Self-attention with Shaw-style relative position encodings, causal mask."""
 
-    def __init__(self, config: GPTConfig, input_size: int | None = None) -> None:
+    def __init__(self, config: ModelConfig, input_size: int | None = None) -> None:
         super().__init__()
         assert config.n_embd % config.n_head == 0
         self.config = config
@@ -226,8 +223,8 @@ class _CausalSelfAttentionRelativePosition(nn.Module):
         self.hs = self.n_embd // config.n_head
         self.dropout = config.dropout
 
-        self.c_attn = nn.Linear(self.n_embd, 3 * self.n_embd, bias=config.bias)
-        self.c_proj = nn.Linear(self.n_embd, self.n_embd, bias=config.bias)
+        self.c_attn = nn.Linear(self.n_embd, 3 * self.n_embd, bias=True)
+        self.c_proj = nn.Linear(self.n_embd, self.n_embd, bias=True)
         self.Er = nn.Parameter(torch.randn(self.block_size, self.hs))  # (L, hs)
         self.attn_dropout = nn.Dropout(self.dropout)
         self.resid_dropout = nn.Dropout(self.dropout)
@@ -270,11 +267,11 @@ class _CausalSelfAttentionRelativePosition(nn.Module):
 class _BlockRelativePosition(nn.Module):
     """A single Transformer block with relative position attention."""
 
-    def __init__(self, config: GPTConfig) -> None:
+    def __init__(self, config: ModelConfig) -> None:
         super().__init__()
-        self.ln_1 = nn.LayerNorm(config.n_embd, bias=config.bias)
+        self.ln_1 = nn.LayerNorm(config.n_embd, bias=True)
         self.attn = _CausalSelfAttentionRelativePosition(config)
-        self.ln_2 = nn.LayerNorm(config.n_embd, bias=config.bias)
+        self.ln_2 = nn.LayerNorm(config.n_embd, bias=True)
         self.mlp = _MLP(config)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -288,7 +285,7 @@ if __name__ == '__main__':
 
     model = Model(
         preprocessor=Preprocessor(DataConfig('~/Data/mds/full')),
-        gpt_config=GPTConfig(),
+        config=ModelConfig(),
     )
     # batch size and sequence length
     B, L = 2, 10

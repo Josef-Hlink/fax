@@ -7,7 +7,7 @@ import attr
 @attr.s(auto_attribs=True, frozen=True)
 class BaseConfig:
     seed: int = 42
-    n_gpus: int = 1
+    n_gpus: int = 1  # set to 0 for CPU training
     debug: bool = False
 
 
@@ -16,9 +16,21 @@ class DataConfig:
     """Separated for easy passing around."""
 
     dir: str = ''
-    seq_len: int = 2**8
+    batch_size: int = 64
+    n_samples: int = 2**10
     max_samples: int = -1  # -1 means no limit
+    n_eval_samples: int = 2**8
+    n_epochs: int = 4
     gamma: float = 0.999  # for discounted returns in preprocessing
+
+
+@attr.s(auto_attribs=True, frozen=True)
+class ModelConfig:
+    block_size: int = 256  # context length
+    n_embd: int = 256
+    n_layer: int = 4
+    n_head: int = 8
+    dropout: float = 0.1
 
 
 @attr.s(auto_attribs=True, frozen=True)
@@ -26,11 +38,8 @@ class TrainConfig:
     """Inherits from BaseConfig."""
 
     data: DataConfig = DataConfig()
-    batch_size: int = 64
+    model: ModelConfig = ModelConfig()
     lr: float = 3e-4
-    n_samples: int = 2**10
-    n_eval_samples: int = 2**8
-    n_epochs: int = 4
     beta1: float = 0.9
     beta2: float = 0.999
     wd: float = 1e-2  # weight decay
@@ -94,3 +103,5 @@ if __name__ == '__main__':
 
     print(base_config)
     print(train_config)
+    print(train_config.data)
+    print(train_config.model)
