@@ -83,4 +83,5 @@ if __name__ == '__main__':
     parser = create_parser(Config, parser)
     config = parse_args(Config, parser.parse_args())
 
-    print(config)
+    for k, v in config.__dict__.items():
+        print(f'{k}: {v}')
