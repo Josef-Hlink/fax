@@ -40,7 +40,7 @@ class FAXStreamingDataset(StreamingDataset):
         split: str = 'train',
         shuffle: bool = True,
         data_config: DataConfig | None = None,
-        **kwargs
+        **kwargs,
     ):
         super().__init__(local=local, remote=remote, split=split, shuffle=shuffle, **kwargs)
 
@@ -58,9 +58,7 @@ class FAXStreamingDataset(StreamingDataset):
         episode_td = convert_ndarray_to_tensordict(episode_data)
 
         # Sample a subsequence for training
-        sample_td = self.preprocessor.sample_from_episode(
-            episode_td, debug=not self.is_train
-        )
+        sample_td = self.preprocessor.sample_from_episode(episode_td, debug=not self.is_train)
 
         # Randomly choose ego player (p1 or p2)
         ego: Player = random.choice(['p1', 'p2']) if self.is_train else 'p1'
@@ -74,13 +72,13 @@ class FAXStreamingDataset(StreamingDataset):
         targets_td = self.preprocessor.offset_targets(targets_td)
 
         # Combine into single TensorDict for training
-        return TensorDict({
-            'inputs': inputs_td,
-            'targets': targets_td,
-        }, batch_size=())
-
-
-
+        return TensorDict(
+            {
+                'inputs': inputs_td,
+                'targets': targets_td,
+            },
+            batch_size=(),
+        )
 
 
 def get_dataloaders(config: TrainConfig) -> Tuple[StreamingDataLoader, StreamingDataLoader]:
@@ -145,7 +143,7 @@ def get_dataloaders(config: TrainConfig) -> Tuple[StreamingDataLoader, Streaming
 def save_dataloader_state(loader: StreamingDataLoader, path: Path) -> None:
     """Checkpoint the dataloader state to disk."""
     state = loader.state_dict()
-    with path.open("wb") as f:
+    with path.open('wb') as f:
         torch.save(state, f)
 
 
