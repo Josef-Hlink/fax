@@ -3,14 +3,14 @@ from __future__ import annotations
 
 import random
 from pathlib import Path
-from typing import Sequence, Tuple
+from typing import Any, Sequence, Tuple
 
 import torch
 from streaming import StreamingDataset, StreamingDataLoader
 from streaming.base.util import clean_stale_shared_memory
 from tensordict import TensorDict
 
-from fax.config import TrainConfig, DataConfig
+from fax.config import Config
 from fax.constants import Player
 from fax.processing.preprocessor import Preprocessor, convert_ndarray_to_tensordict
 
@@ -35,22 +35,27 @@ class FAXStreamingDataset(StreamingDataset):
 
     def __init__(
         self,
-        local: str,
+        config: Config,
         remote: str | None = None,
         split: str = 'train',
         shuffle: bool = True,
-        data_config: DataConfig | None = None,
         **kwargs,
     ):
-        super().__init__(local=local, remote=remote, split=split, shuffle=shuffle, **kwargs)
+        super().__init__(
+            local=Path(config.data_dir).expanduser().as_posix(),
+            remote=remote,
+            split=split,
+            shuffle=shuffle,
+            **kwargs,
+        )
 
-        self.data_config = data_config or DataConfig()
-        self.preprocessor = Preprocessor(self.data_config)
+        self.config = config
+        self.preprocessor = Preprocessor(config)
 
         # For reproducible sampling during validation
         self.is_train = split == 'train'
 
-    def __getitem__(self, idx: int) -> TensorDict:
+    def __getitem__(self, idx: Any) -> TensorDict:
         # Get raw episode data from MDS
         episode_data = super().__getitem__(idx)
 
@@ -81,7 +86,7 @@ class FAXStreamingDataset(StreamingDataset):
         )
 
 
-def get_dataloaders(config: TrainConfig) -> Tuple[StreamingDataLoader, StreamingDataLoader]:
+def get_dataloaders(config: Config) -> Tuple[StreamingDataLoader, StreamingDataLoader]:
     """
     Create train and validation dataloaders.
 
@@ -92,27 +97,24 @@ def get_dataloaders(config: TrainConfig) -> Tuple[StreamingDataLoader, Streaming
         Tuple of (train_loader, val_loader)
     """
     batch_size = config.batch_size
-    data_dir = Path(config.data.dir).expanduser()
 
     # Clean stale shared memory
     clean_stale_shared_memory()
 
     # Create datasets
     train_dataset = FAXStreamingDataset(
-        local=str(data_dir),
+        config=config,
         remote=None,
         split='train',
         shuffle=True,
-        data_config=config.data,
         batch_size=batch_size,
     )
 
     val_dataset = FAXStreamingDataset(
-        local=str(data_dir),
+        config=config,
         remote=None,
         split='val',
         shuffle=False,
-        data_config=config.data,
         batch_size=batch_size,
     )
 
@@ -154,29 +156,14 @@ def load_dataloader_state(loader: StreamingDataLoader, path: Path) -> None:
 
 
 if __name__ == '__main__':
-    # Test the dataloader with preprocessing
-    import argparse
+    B, L = 4, 32
+    config = Config(data_dir='~/Data/mds/full', batch_size=B, seq_len=L)
+    train_loader, val_loader = get_dataloaders(config=Config(data_dir='~/Data/mds/full'))
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--data-dir', type=str, required=True, help='Path to MDS data directory')
-    parser.add_argument('--batch-size', type=int, default=4, help='Batch size for testing')
-    parser.add_argument('--seq-len', type=int, default=64, help='Sequence length')
-    args = parser.parse_args()
-
-    print('[main] Testing FAXStreamingDataset with preprocessing...')
-
-    # Create config
-    data_config = DataConfig(dir=args.data_dir, seq_len=args.seq_len)
-    train_config = TrainConfig(data=data_config, batch_size=args.batch_size)
-
-    # Get dataloaders
-    train_loader, val_loader = get_dataloaders(train_config)
-
-    print(f'[main] Created dataloaders with batch_size={args.batch_size}, seq_len={args.seq_len}')
-    print(f'[main] Testing train loader...')
+    print(f'Created dataloaders with batch_size={config.batch_size}, seq_len={config.seq_len}')
 
     for i, batch in enumerate(train_loader):
-        print(f'[main] Batch #{i + 1}:')
+        print(f'Batch #{i + 1}:')
         print(f'  batch.shape: {batch.shape}')
         print(f'  batch.keys(): {list(batch.keys())}')
 
@@ -198,4 +185,4 @@ if __name__ == '__main__':
         if i >= 1:  # Test just 2 batches
             break
 
-    print('[main] Dataloader test completed successfully!')
+    print('Dataloader test completed successfully!')
