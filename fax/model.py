@@ -1,21 +1,6 @@
-# fax/models/gpt_v5_1.py
-# Minimal blocks needed for GPTv5_1Controller (relative-pos attention + MLP heads).
-# Expects:
-#   - preprocessor.input_size: int
-#   - preprocessor.data_config.{num_stages,stage_embedding_dim,
-#                               num_characters,character_embedding_dim,
-#                               num_actions,action_embedding_dim}
-#   - preprocessor.target_config.target_shapes_by_head: dict with keys
-#       {"c_stick","main_stick","buttons","shoulder"} -> (out_dim, ...)
-#
-# Inputs (TensorDict) are expected to contain:
-#   "stage", "ego_character", "opponent_character",
-#   "ego_action", "opponent_action", "gamestate", "controller"
-
 from __future__ import annotations
 from typing import cast
 import math
-from dataclasses import dataclass
 
 import torch
 import torch.nn as nn
@@ -31,17 +16,7 @@ from fax.constants import (
     ACTION_EMBEDDING_DIM,
 )
 from fax.processing.preprocessor import Preprocessor
-from fax.config import DataConfig, ModelConfig
-
-
-@dataclass
-class GPTConfig:
-    block_size: int = 1024
-    n_embd: int = 512
-    n_layer: int = 6
-    n_head: int = 8
-    dropout: float = 0.2
-    bias: bool = True  # bias in Linear/LayerNorm (GPT-2 style)
+from fax.config import Config
 
 
 class Model(nn.Module):
@@ -50,12 +25,12 @@ class Model(nn.Module):
     Order: c_stick -> main_stick -> buttons -> shoulder (each head sees previous via detached concat).
     """
 
-    def __init__(self, preprocessor: Preprocessor, config: ModelConfig) -> None:
+    def __init__(self, preprocessor: Preprocessor, config: Config) -> None:
         super().__init__()
         self.preprocessor = preprocessor
-        self.block_size = config.block_size
+        self.block_size = config.seq_len
         self.input_size = preprocessor.input_size
-        self.n_embd = config.n_embd
+        self.n_embd = config.emb_dim
 
         self.stage_emb = nn.Embedding(NUM_STAGES, STAGE_EMBEDDING_DIM)
         self.character_emb = nn.Embedding(NUM_CHARACTERS, CHARACTER_EMBEDDING_DIM)
@@ -63,9 +38,9 @@ class Model(nn.Module):
 
         self.transformer = nn.ModuleDict(
             dict(
-                proj_down=nn.Linear(self.input_size, config.n_embd),
+                proj_down=nn.Linear(self.input_size, config.emb_dim),
                 drop=nn.Dropout(config.dropout),
-                h=nn.ModuleList([_BlockRelativePosition(config) for _ in range(config.n_layer)]),
+                h=nn.ModuleList([_BlockRelativePosition(config) for _ in range(config.n_layers)]),
                 ln_f=nn.LayerNorm(self.n_embd, bias=True),
             )
         )
@@ -74,7 +49,7 @@ class Model(nn.Module):
         self.apply(self._init_weights)
         for pn, p in self.named_parameters():
             if pn.endswith('c_proj.weight'):
-                nn.init.normal_(p, mean=0.0, std=0.02 / math.sqrt(2 * config.n_layer))
+                nn.init.normal_(p, mean=0.0, std=0.02 / math.sqrt(2 * config.n_layers))
 
         tgt = preprocessor.target_config.target_shapes_by_head
         c_stick_in = self.n_embd
@@ -177,11 +152,11 @@ class Model(nn.Module):
 
 
 class _MLP(nn.Module):
-    def __init__(self, config: ModelConfig) -> None:
+    def __init__(self, config: Config) -> None:
         super().__init__()
-        self.c_fc = nn.Linear(config.n_embd, 4 * config.n_embd, bias=True)
+        self.c_fc = nn.Linear(config.emb_dim, 4 * config.emb_dim, bias=True)
         self.gelu = nn.GELU()
-        self.c_proj = nn.Linear(4 * config.n_embd, config.n_embd, bias=True)
+        self.c_proj = nn.Linear(4 * config.emb_dim, config.emb_dim, bias=True)
         self.dropout = nn.Dropout(config.dropout)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -213,14 +188,14 @@ def skew(QEr: torch.Tensor) -> torch.Tensor:
 class _CausalSelfAttentionRelativePosition(nn.Module):
     """Self-attention with Shaw-style relative position encodings, causal mask."""
 
-    def __init__(self, config: ModelConfig, input_size: int | None = None) -> None:
+    def __init__(self, config: Config, input_size: int | None = None) -> None:
         super().__init__()
-        assert config.n_embd % config.n_head == 0
+        assert config.emb_dim % config.n_heads == 0
         self.config = config
-        self.block_size = config.block_size
-        self.n_embd = input_size or config.n_embd
-        self.n_head = config.n_head
-        self.hs = self.n_embd // config.n_head
+        self.block_size = config.seq_len
+        self.n_embd = input_size or config.emb_dim
+        self.n_heads = config.n_heads
+        self.hs = self.n_embd // config.n_heads
         self.dropout = config.dropout
 
         self.c_attn = nn.Linear(self.n_embd, 3 * self.n_embd, bias=True)
@@ -243,9 +218,9 @@ class _CausalSelfAttentionRelativePosition(nn.Module):
         assert L <= self.block_size, f'seq len {L} > block_size {self.block_size}'
 
         q, k, v = self.c_attn(x).split(self.n_embd, dim=2)
-        q = q.view(B, L, self.n_head, self.hs).transpose(1, 2)  # (B, H, L, hs)
-        k = k.view(B, L, self.n_head, self.hs).transpose(1, 2)
-        v = v.view(B, L, self.n_head, self.hs).transpose(1, 2)
+        q = q.view(B, L, self.n_heads, self.hs).transpose(1, 2)  # (B, H, L, hs)
+        k = k.view(B, L, self.n_heads, self.hs).transpose(1, 2)
+        v = v.view(B, L, self.n_heads, self.hs).transpose(1, 2)
 
         # relative position
         start = self.block_size - L
@@ -267,11 +242,11 @@ class _CausalSelfAttentionRelativePosition(nn.Module):
 class _BlockRelativePosition(nn.Module):
     """A single Transformer block with relative position attention."""
 
-    def __init__(self, config: ModelConfig) -> None:
+    def __init__(self, config: Config) -> None:
         super().__init__()
-        self.ln_1 = nn.LayerNorm(config.n_embd, bias=True)
+        self.ln_1 = nn.LayerNorm(config.emb_dim, bias=True)
         self.attn = _CausalSelfAttentionRelativePosition(config)
-        self.ln_2 = nn.LayerNorm(config.n_embd, bias=True)
+        self.ln_2 = nn.LayerNorm(config.emb_dim, bias=True)
         self.mlp = _MLP(config)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -283,12 +258,10 @@ class _BlockRelativePosition(nn.Module):
 if __name__ == '__main__':
     # simple test with random tensors
 
-    model = Model(
-        preprocessor=Preprocessor(DataConfig('~/Data/mds/full')),
-        config=ModelConfig(),
-    )
     # batch size and sequence length
     B, L = 2, 10
+    config = Config(data_dir='~/Data/mds/full', batch_size=B, seq_len=L, n_epochs=1)
+    model = Model(preprocessor=Preprocessor(config), config=config)
 
     # Get the correct dimensions from the input config
     gamestate_dim = model.preprocessor.input_config.input_shapes_by_head['gamestate'][0]  # 18

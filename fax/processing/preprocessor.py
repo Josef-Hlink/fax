@@ -16,7 +16,7 @@ from .configs import (
 )
 from .transformations import Transformation
 from fax.constants import Player, get_opponent
-from fax.config import DataConfig
+from fax.config import Config
 from fax.stats import FeatureStats, load_dataset_stats
 
 
@@ -34,11 +34,11 @@ class Preprocessor:
     - hidden dim sizes by input embedding head at runtime
     """
 
-    def __init__(self, data_config: DataConfig) -> None:
-        self.data_config = data_config
-        self.stats = load_dataset_stats(Path(data_config.dir).expanduser())
+    def __init__(self, config: Config) -> None:
+        self.config = config
+        self.stats = load_dataset_stats(Path(config.data_dir).expanduser())
         self.normalization_fn_by_feature_name: Dict[str, Transformation] = {}  # TODO: check used
-        self.seq_len = data_config.seq_len
+        self.seq_len = config.seq_len
 
         self.input_config = get_input_config()
         self.target_config = get_target_config()
@@ -159,7 +159,7 @@ class Preprocessor:
         Exactly matches the per-step logic:
             R[t] = r[t] + gamma * r[t+1] + gamma^2 * r[t+2] + ...
         """
-        gamma = self.data_config.gamma
+        gamma = self.config.gamma
         rewards = td[f'{ego}_reward']  # shape: [T] (or possibly more dims)
         T = rewards.shape[0]
         device = rewards.device
@@ -221,7 +221,6 @@ def preprocess_input_features(
         for feature_name in config.player_features:
             # Convert feature name from p1/p2 to either ego/opponent
             perspective_feature_name = f'{perspective}_{feature_name}'  # e.g. "p1_action"
-            # TODO handle Nana
             player_feature_name = f'{player}_{feature_name}'  # e.g. "ego_action"
             transform = transformation_by_feature_name[feature_name]
             processed_features[perspective_feature_name] = transform(
