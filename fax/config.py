@@ -55,7 +55,9 @@ def create_parser(cls: Type[Any], parser: ArgumentParser) -> ArgumentParser:
     for field in attr.fields(cls):
         arg_name = f'--{field.name.replace("_", "-")}'
         if field.type == bool:
-            parser.add_argument(arg_name, action='store_true', help=field.metadata.get('help', ''))
+            parser.add_argument(
+                arg_name, action='store_true', help=getattr(help_messages, field.name, '')
+            )
             continue
         parser.add_argument(
             arg_name,
