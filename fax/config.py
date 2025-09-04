@@ -1,107 +1,86 @@
-from typing import Type, Any, Tuple, Dict
-from argparse import ArgumentParser, Namespace
+from typing import Type, Any, Dict
+from argparse import ArgumentParser, Namespace, ArgumentDefaultsHelpFormatter
 
 import attr
 
 
 @attr.s(auto_attribs=True, frozen=True)
-class BaseConfig:
-    seed: int = 42
-    n_gpus: int = 1  # set to 0 for CPU training
+class Config:
+    data_dir: str = ''
     debug: bool = False
-
-
-@attr.s(auto_attribs=True, frozen=True)
-class DataConfig:
-    """Separated for easy passing around."""
-
-    dir: str = ''
+    seed: int = 42
+    n_gpus: int = 1
     batch_size: int = 64
     n_samples: int = 2**10
-    max_samples: int = -1  # -1 means no limit
     n_eval_samples: int = 2**8
-    n_epochs: int = 4
-    gamma: float = 0.999  # for discounted returns in preprocessing
-
-
-@attr.s(auto_attribs=True, frozen=True)
-class ModelConfig:
-    block_size: int = 256  # context length
-    n_embd: int = 256
-    n_layer: int = 4
-    n_head: int = 8
+    n_epochs: int = 10
+    seq_len: int = 256
+    gamma: float = 0.999
+    emb_dim: int = 256
+    n_layers: int = 4
+    n_heads: int = 8
     dropout: float = 0.1
-
-
-@attr.s(auto_attribs=True, frozen=True)
-class TrainConfig:
-    """Inherits from BaseConfig."""
-
-    data: DataConfig = DataConfig()
-    model: ModelConfig = ModelConfig()
     lr: float = 3e-4
-    beta1: float = 0.9
-    beta2: float = 0.999
-    wd: float = 1e-2  # weight decay
+    b1: float = 0.9
+    b2: float = 0.999
+    wd: float = 1e-2
     grad_clip_norm: float = 1.0
 
-    @property
-    def betas(self) -> Tuple[float, float]:
-        return (self.beta1, self.beta2)
+
+@attr.s(auto_attribs=True, frozen=True)
+class Help:
+    data_dir = '[REQUIRED] Path to MDS data directory with train/val/test splits and stats.json'
+    seed = 'Random seed for reproducibility'
+    n_gpus = 'Number of GPUs to use for training [0 for CPU]'
+    debug = 'More verbose logging'
+    batch_size = 'Batch size for training'  # TODO: confirm
+    n_samples = 'Number of training samples to use [-1 for all]'  # TODO: confirm
+    n_eval_samples = 'Number of evaluation samples to use [-1 for all]'  # TODO: impl. -1
+    n_epochs = 'Number of training epochs'
+    seq_len = 'Sequence length (context size) for the model'
+    gamma = 'Discount factor for sequence rewards calculation during preprocessing'
+    emb_dim = 'Model embedding dimension'
+    n_layers = 'Number of transformer layers'
+    n_heads = 'Number of attention heads'
+    dropout = 'Dropout rate for the model'
+    lr = 'Learning rate for the optimizer'
+    b1 = 'Beta1 for AdamW optimizer'
+    b2 = 'Beta2 for AdamW optimizer'
+    wd = 'Weight decay for AdamW optimizer'
+    grad_clip_norm = 'Gradient clipping norm value'
 
 
-def check_required(field: Any) -> bool:
-    return field.default is attr.NOTHING or (field.type == str and field.default == '')
-
-
-def create_parser(cls: Type[Any], parser: ArgumentParser, prefix: str = '') -> ArgumentParser:
+def create_parser(cls: Type[Any], parser: ArgumentParser) -> ArgumentParser:
+    help_messages = Help()
     for field in attr.fields(cls):
-        arg_name = f'--{prefix}{field.name.replace("_", "-")}'
-        if attr.has(field.type):
-            # nested dataclass -> recurse
-            parser = create_parser(field.type, parser, prefix=f'{field.name}.')
-        else:
-            if field.type == bool:
-                parser.add_argument(
-                    arg_name, action='store_true', help=field.metadata.get('help', '')
-                )
-            else:
-                parser.add_argument(
-                    arg_name,
-                    type=field.type,
-                    default=field.default if field.default is not attr.NOTHING else None,
-                    help=field.metadata.get('help', ''),
-                    required=check_required(field),
-                )
+        arg_name = f'--{field.name.replace("_", "-")}'
+        if field.type == bool:
+            parser.add_argument(arg_name, action='store_true', help=field.metadata.get('help', ''))
+            continue
+        parser.add_argument(
+            arg_name,
+            type=field.type,
+            default=field.default if field.default is not attr.NOTHING else None,
+            help=getattr(help_messages, field.name, ''),
+            required=field.type == str and field.default == '',  # only for data_dir
+        )
 
     return parser
 
 
-def parse_args(cls: Type[Any], args: Namespace, prefix: str = '') -> Any:
+def parse_args(cls: Type[Any], args: Namespace) -> Config:
     kwargs: Dict[str, Any] = {}
     for field in attr.fields(cls):
-        arg_name = f'{prefix}{field.name.replace("_", "-")}'
-        if attr.has(field.type):
-            # nested dataclass -> recurse
-            value = parse_args(field.type, args, prefix=f'{field.name}.')
-        else:
-            value = getattr(args, arg_name.replace('-', '_'), field.default)
-            if value is None and field.default is attr.NOTHING:
-                raise ValueError(f'Missing required argument: {arg_name}')
+        value = getattr(args, field.name, field.default)
         kwargs[field.name] = value
     return cls(**kwargs)
 
 
 if __name__ == '__main__':
-    parser = ArgumentParser()
-    parser = create_parser(BaseConfig, parser)
-    parser = create_parser(TrainConfig, parser, prefix='train.')
-    args = parser.parse_args()
+    parser = ArgumentParser(
+        description='FAX Training Configuration', formatter_class=ArgumentDefaultsHelpFormatter
+    )
+    parser = create_parser(Config, parser)
+    config = parse_args(Config, parser.parse_args())
 
-    base_config = parse_args(BaseConfig, args)
-    train_config = parse_args(TrainConfig, args, prefix='train.')
-
-    print(base_config)
-    print(train_config)
-    print(train_config.data)
-    print(train_config.model)
+    print(config)
