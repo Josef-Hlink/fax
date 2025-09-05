@@ -9,8 +9,8 @@ from tensordict import TensorDict
 from fax.stats import FeatureStats
 from fax.constants import (
     INCLUDED_BUTTONS,
-    STICK_XY_CLUSTER_CENTERS_V0,
-    SHOULDER_CLUSTER_CENTERS_V0,
+    STICK_CENTERS,
+    SHOULDER_CENTERS,
 )
 
 # for type hinting
@@ -145,17 +145,17 @@ def encode_main_stick_one_hot_coarse(sample: TensorDict, player: str) -> torch.T
     main_stick_x = sample[f'{player}_main_stick_x']
     main_stick_y = sample[f'{player}_main_stick_y']
     main_stick_clusters = _get_closest_2D_cluster(
-        main_stick_x, main_stick_y, STICK_XY_CLUSTER_CENTERS_V0
+        main_stick_x, main_stick_y, STICK_CENTERS
     )
-    one_hot_main_stick = one_hot_from_int(main_stick_clusters, len(STICK_XY_CLUSTER_CENTERS_V0))
+    one_hot_main_stick = one_hot_from_int(main_stick_clusters, len(STICK_CENTERS))
     return torch.tensor(one_hot_main_stick, dtype=torch.float32)
 
 
 def encode_c_stick_one_hot_coarse(sample: TensorDict, player: str) -> torch.Tensor:
     c_stick_x = sample[f'{player}_c_stick_x']
     c_stick_y = sample[f'{player}_c_stick_y']
-    c_stick_clusters = _get_closest_2D_cluster(c_stick_x, c_stick_y, STICK_XY_CLUSTER_CENTERS_V0)
-    one_hot_c_stick = one_hot_from_int(c_stick_clusters, len(STICK_XY_CLUSTER_CENTERS_V0))
+    c_stick_clusters = _get_closest_2D_cluster(c_stick_x, c_stick_y, STICK_CENTERS)
+    one_hot_c_stick = one_hot_from_int(c_stick_clusters, len(STICK_CENTERS))
     return torch.tensor(one_hot_c_stick, dtype=torch.float32)
 
 
@@ -163,8 +163,8 @@ def encode_shoulder_one_hot_coarse(sample: TensorDict, player: str) -> torch.Ten
     shoulder_l = sample[f'{player}_l_shoulder']
     shoulder_r = sample[f'{player}_r_shoulder']
     shoulder = np.max(np.stack([shoulder_l, shoulder_r], axis=-1), axis=-1)
-    shoulder_clusters = get_closest_1D_cluster(shoulder, SHOULDER_CLUSTER_CENTERS_V0)
-    one_hot_shoulder = one_hot_from_int(shoulder_clusters, len(SHOULDER_CLUSTER_CENTERS_V0))
+    shoulder_clusters = get_closest_1D_cluster(shoulder, SHOULDER_CENTERS)
+    one_hot_shoulder = one_hot_from_int(shoulder_clusters, len(SHOULDER_CENTERS))
     return torch.tensor(one_hot_shoulder, dtype=torch.float32)
 
 
@@ -194,7 +194,7 @@ def sample_main_stick_coarse(pred_C: TensorDict, temperature: float = 1.0) -> tu
     main_stick_probs = torch.softmax(pred_C['main_stick'] / temperature, dim=-1)
     main_stick_cluster_idx = torch.multinomial(main_stick_probs, num_samples=1)
     main_stick_x, main_stick_y = torch.split(
-        torch.tensor(STICK_XY_CLUSTER_CENTERS_V0[main_stick_cluster_idx]), 1, dim=-1
+        torch.tensor(STICK_CENTERS[main_stick_cluster_idx]), 1, dim=-1
     )
 
     return main_stick_x.item(), main_stick_y.item()
@@ -204,7 +204,7 @@ def sample_c_stick_coarse(pred_C: TensorDict, temperature: float = 1.0) -> tuple
     c_stick_probs = torch.softmax(pred_C['c_stick'] / temperature, dim=-1)
     c_stick_cluster_idx = torch.multinomial(c_stick_probs, num_samples=1)
     c_stick_x, c_stick_y = torch.split(
-        torch.tensor(STICK_XY_CLUSTER_CENTERS_V0[c_stick_cluster_idx]), 1, dim=-1
+        torch.tensor(STICK_CENTERS[c_stick_cluster_idx]), 1, dim=-1
     )
 
     return c_stick_x.item(), c_stick_y.item()
@@ -220,5 +220,5 @@ def sample_single_button(pred_C: TensorDict, temperature: float = 1.0) -> List[s
 def sample_analog_shoulder_coarse(pred_C: TensorDict, temperature: float = 1.0) -> float:
     shoulder_probs = torch.softmax(pred_C['shoulder'] / temperature, dim=-1)
     shoulder_idx = int(torch.multinomial(shoulder_probs, num_samples=1).item())
-    shoulder = SHOULDER_CLUSTER_CENTERS_V0[shoulder_idx]
+    shoulder = SHOULDER_CENTERS[shoulder_idx]
     return shoulder

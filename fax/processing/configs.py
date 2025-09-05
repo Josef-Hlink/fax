@@ -29,8 +29,8 @@ from fax.constants import (
     CHARACTER_EMBEDDING_DIM,
     ACTION_EMBEDDING_DIM,
     INCLUDED_BUTTONS,
-    STICK_XY_CLUSTER_CENTERS_V0,
-    SHOULDER_CLUSTER_CENTERS_V0,
+    STICK_CENTERS,
+    SHOULDER_CENTERS,
 )
 
 
@@ -174,8 +174,8 @@ def baseline_coarse() -> TargetConfig:
             'buttons': 0,
         },
         target_shapes_by_head={
-            'main_stick': (len(STICK_XY_CLUSTER_CENTERS_V0),),
-            'c_stick': (len(STICK_XY_CLUSTER_CENTERS_V0),),
+            'main_stick': (len(STICK_CENTERS),),
+            'c_stick': (len(STICK_CENTERS),),
             'buttons': (len(INCLUDED_BUTTONS),),
         },
     )
@@ -196,9 +196,9 @@ def get_target_config() -> TargetConfig:
             'buttons': 0,
         },
         target_shapes_by_head={
-            'main_stick': (len(STICK_XY_CLUSTER_CENTERS_V0),),
-            'c_stick': (len(STICK_XY_CLUSTER_CENTERS_V0),),
-            'shoulder': (len(SHOULDER_CLUSTER_CENTERS_V0),),
+            'main_stick': (len(STICK_CENTERS),),
+            'c_stick': (len(STICK_CENTERS),),
+            'shoulder': (len(SHOULDER_CENTERS),),
             'buttons': (len(INCLUDED_BUTTONS),),
         },
     )

@@ -12,8 +12,8 @@ from tensordict import TensorDict
 from fax.stats import FeatureStats
 from fax.constants import (
     INCLUDED_BUTTONS,
-    STICK_XY_CLUSTER_CENTERS_V0,
-    SHOULDER_CLUSTER_CENTERS_V0,
+    STICK_CENTERS,
+    SHOULDER_CENTERS,
 )
 
 # for type hinting
@@ -21,8 +21,8 @@ Transformation = Callable[..., torch.Tensor]
 
 # ---------------------------------------------------------------------
 # Torch copies of cluster centers (moved to the input's device on use)
-_STICK_CENTERS = torch.as_tensor(STICK_XY_CLUSTER_CENTERS_V0, dtype=torch.float32)  # [C, 2]
-_SHOULDER_CENTERS = torch.as_tensor(SHOULDER_CLUSTER_CENTERS_V0, dtype=torch.float32)  # [C]
+_STICK_CENTERS = torch.as_tensor(STICK_CENTERS, dtype=torch.float32)  # [C, 2]
+_SHOULDER_CENTERS = torch.as_tensor(SHOULDER_CENTERS, dtype=torch.float32)  # [C]
 
 _EPS = 1e-6
 
