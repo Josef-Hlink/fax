@@ -9,7 +9,7 @@ import torch
 from loguru import logger
 from tensordict import TensorDict
 
-from fax.constants import INCLUDED_STAGES, PLAYER_1_PORT, PLAYER_2_PORT, Player
+from fax.constants import STAGES, PLAYER_1_PORT, PLAYER_2_PORT, Player
 from fax.schema import NP_TYPE_BY_COLUMN
 
 PRIOR_STAGE_LIKELIHOODS = {
@@ -84,7 +84,7 @@ class Matchup:
     def spacies(cls, n: int) -> List['Matchup']:
         """Generate `n` spacies matchups"""
         matchups: List[Matchup] = []
-        stages = INCLUDED_STAGES
+        stages = STAGES
         characters = ['FOX', 'FALCO']
         i = 0
         while len(matchups) < n:
