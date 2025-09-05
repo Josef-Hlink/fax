@@ -1,4 +1,3 @@
-# fax/dataloader.py
 from __future__ import annotations
 
 import random
@@ -33,27 +32,19 @@ class FAXStreamingDataset(StreamingDataset):
     6. Returns training-ready input/target pairs
     """
 
-    def __init__(
-        self,
-        config: Config,
-        remote: str | None = None,
-        split: str = 'train',
-        shuffle: bool = True,
-        **kwargs,
-    ):
+    def __init__(self, config: Config, split: str = 'train', batch_size: int = 1):
+        """Fax streaming dataset constructor."""
+
         super().__init__(
             local=Path(config.data_dir).expanduser().as_posix(),
-            remote=remote,
             split=split,
-            shuffle=shuffle,
-            **kwargs,
+            shuffle=True,
+            batch_size=batch_size,
         )
 
         self.config = config
         self.preprocessor = Preprocessor(config)
-
-        # For reproducible sampling during validation
-        self.is_train = split == 'train'
+        self.is_train = split == 'train'  # for reproducible sampling during validation
 
     def __getitem__(self, idx: Any) -> TensorDict:
         # Get raw episode data from MDS
@@ -77,13 +68,11 @@ class FAXStreamingDataset(StreamingDataset):
         targets_td = self.preprocessor.offset_targets(targets_td)
 
         # Combine into single TensorDict for training
-        return TensorDict(
-            {
-                'inputs': inputs_td,
-                'targets': targets_td,
-            },
-            batch_size=(),
-        )
+        payload: dict[str, Any] = {
+            'inputs': inputs_td,
+            'targets': targets_td,
+        }
+        return TensorDict(payload, batch_size=())
 
 
 def get_dataloaders(config: Config) -> Tuple[StreamingDataLoader, StreamingDataLoader]:
@@ -104,17 +93,13 @@ def get_dataloaders(config: Config) -> Tuple[StreamingDataLoader, StreamingDataL
     # Create datasets
     train_dataset = FAXStreamingDataset(
         config=config,
-        remote=None,
         split='train',
-        shuffle=True,
         batch_size=batch_size,
     )
 
     val_dataset = FAXStreamingDataset(
         config=config,
-        remote=None,
         split='val',
-        shuffle=False,
         batch_size=batch_size,
     )
 
@@ -158,7 +143,7 @@ def load_dataloader_state(loader: StreamingDataLoader, path: Path) -> None:
 if __name__ == '__main__':
     B, L = 4, 32
     config = Config(data_dir='~/Data/mds/full', batch_size=B, seq_len=L)
-    train_loader, val_loader = get_dataloaders(config=Config(data_dir='~/Data/mds/full'))
+    train_loader, val_loader = get_dataloaders(config=config)
 
     print(f'Created dataloaders with batch_size={config.batch_size}, seq_len={config.seq_len}')
 
