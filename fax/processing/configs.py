@@ -105,7 +105,7 @@ def get_input_config() -> InputConfig:
             'shield_strength': invert_and_normalize,
             'position_x': standardize,
             'position_y': standardize,
-            'controller': partial(concat_controller_inputs, target_config=baseline_coarse()),
+            'controller': partial(concat_controller_inputs, target_config=get_target_config()),
         },
         frame_offsets_by_input={
             'controller': -1,
@@ -121,7 +121,7 @@ def get_input_config() -> InputConfig:
         },
         input_shapes_by_head={
             'gamestate': (2 * 9,),  # 2x for ego and opponent
-            'controller': (baseline_coarse().target_size,),
+            'controller': (get_target_config().target_size,),
             'stage': (STAGE_EMBEDDING_DIM,),
             'ego_character': (CHARACTER_EMBEDDING_DIM,),
             'opponent_character': (CHARACTER_EMBEDDING_DIM,),
@@ -159,26 +159,6 @@ class TargetConfig:
     def target_size(self) -> int:
         """Total dimension of target features."""
         return sum(shape[0] for shape in self.target_shapes_by_head.values())
-
-
-def baseline_coarse() -> TargetConfig:
-    return TargetConfig(
-        transformation_by_target={
-            'main_stick': encode_main_stick_one_hot_coarse,
-            'c_stick': encode_c_stick_one_hot_coarse,
-            'buttons': encode_buttons_one_hot,
-        },
-        frame_offsets_by_target={
-            'main_stick': 0,
-            'c_stick': 0,
-            'buttons': 0,
-        },
-        target_shapes_by_head={
-            'main_stick': (len(STICK_CENTERS),),
-            'c_stick': (len(STICK_CENTERS),),
-            'buttons': (len(INCLUDED_BUTTONS),),
-        },
-    )
 
 
 def get_target_config() -> TargetConfig:

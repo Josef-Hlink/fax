@@ -1,3 +1,5 @@
+# largely copied from https://github.com/ericyuegu/hal
+
 from collections import defaultdict
 from typing import Any, DefaultDict, Dict, MutableSequence, Optional
 
