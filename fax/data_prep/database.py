@@ -13,9 +13,8 @@ import attr
 import sqlite3
 from tqdm import tqdm
 from peppi_py import Game, read_slippi
-from melee import Stage, to_internal_stage, Character
 
-from .peppi_schema import peppi_character_to_internal
+from fax.constants import STAGE_ID_TO_NAME, CHARACTER_ID_TO_NAME
 
 
 def parse_ranked_replays(slp_dir: Path, db_path: Path, n: int = -1, debug: bool = False) -> None:
@@ -58,9 +57,9 @@ def parse_ranked_replays(slp_dir: Path, db_path: Path, n: int = -1, debug: bool 
                     key = field.name
                     value = getattr(record, key)
                     if key == 'stage':
-                        print(f'  {key}: {get_stage_name(value)} ({value})')
+                        print(f'  {key}: {STAGE_ID_TO_NAME[value]} ({value})')
                     elif key in ('p1c', 'p2c'):
-                        print(f'  {key}: {get_character_name(value)} ({value})')
+                        print(f'  {key}: {CHARACTER_ID_TO_NAME[value]} ({value})')
                     else:
                         print(f'  {key}: {value}')
             insert_ranked_replay(db_path, record)
@@ -112,20 +111,6 @@ def parse_ranked_replay(slp_path: Path) -> RankedReplayRecord:
         p1r=game.start.players[0].netplay.name.replace(' Player', ''),
         p2r=game.start.players[1].netplay.name.replace(' Player', ''),
     )
-
-
-def get_stage_name(slp_id: int) -> str:
-    try:
-        return Stage(to_internal_stage(slp_id)).name
-    except ValueError:
-        return f'UNKNOWN_STAGE_{slp_id}'
-
-
-def get_character_name(slp_id: int) -> str:
-    try:
-        return Character(peppi_character_to_internal(slp_id)).name
-    except ValueError:
-        return f'UNKNOWN_CHARACTER_{slp_id}'
 
 
 def init_database(db_path: Path) -> None:

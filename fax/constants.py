@@ -137,7 +137,7 @@ def get_opponent(player: Player) -> Player:
 
 ACTION_ID_TO_NAME: Dict[Action, str] = {action: action.name for action in Action}
 
-NAME_TO_ACTION_ID: Dict[str, Action] = {action.name: action for action in Action}
+ACTION_NAME_TO_ID: Dict[str, Action] = {action.name: action for action in Action}
 
 NUM_ACTIONS = len(ACTION_ID_TO_NAME)
 
