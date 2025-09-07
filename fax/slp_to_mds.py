@@ -5,15 +5,12 @@
 This script converts a directory of .slp files into an MDS dataset.
 """
 
-import sys
 from itertools import islice
-from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 from pathlib import Path
 
 from loguru import logger
 from tqdm import tqdm
 
-from fax.paths import PROJECT_ROOT
 from fax.utils import debug_enabled
 from fax.database import DataBase
 from fax.slp_reader import parse_replay
@@ -72,6 +69,10 @@ def parse_and_store(slp_dir: Path, db: DataBase, n: int) -> None:
 
 
 if __name__ == '__main__':
+    import sys
+    from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
+    from fax.paths import PROJECT_ROOT
+
     parser = ArgumentParser(
         description='Index a directory of .slp files into an SQLite database.',
         formatter_class=ArgumentDefaultsHelpFormatter,
@@ -90,25 +91,18 @@ if __name__ == '__main__':
     parser.add_argument(
         '--db_path',
         type=Path,
-        default=None,
+        default=PROJECT_ROOT / 'db.sqlite',
         help='Path where the SQLite database will be created. '
         + 'Defaults to <project_root>/db.sqlite.',
     )
-    parser.add_argument(
-        '-D',
-        '--debug',
-        action='store_true',
-        help='Enable debug mode.',
-    )
+    parser.add_argument('-D', '--debug', action='store_true', help='Enable debug mode.')
     args = parser.parse_args()
 
     # resolve paths
     slp_dir = args.slp_dir.expanduser().resolve()
     assert slp_dir.is_dir(), f'{slp_dir} is not a directory'
     assert any(slp_dir.rglob('*.slp')), f'No .slp files found in {slp_dir}'
-    if (db_path := args.db_path) is None:
-        db_path = PROJECT_ROOT / 'db.sqlite'
-    db_path = db_path.expanduser().resolve()
+    db_path = args.db_path.expanduser().resolve()
     if db_path.exists():
         logger.error(f'{db_path} already exists; please delete it first')
         sys.exit(1)
@@ -116,6 +110,6 @@ if __name__ == '__main__':
     # set up logging
     logger.remove()
     logger.add(sys.stderr, level='DEBUG' if args.debug else 'INFO')
-    logger.debug(f'debug mode enabled')
+    logger.debug('Debug mode enabled')
 
     main(slp_dir, db_path, args.n)

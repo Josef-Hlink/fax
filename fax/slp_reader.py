@@ -7,10 +7,8 @@ ReplayRecord instances for easy access to relevant fields using peppi_py.
 Example usage in __main__ at the bottom.
 """
 
-import sys
 from pathlib import Path
 from typing import Optional
-from argparse import ArgumentParser
 
 import attr
 from loguru import logger
@@ -91,6 +89,9 @@ def parse_replay(
 
 
 if __name__ == '__main__':
+    import sys
+    from argparse import ArgumentParser
+
     parser = ArgumentParser(description='Parse a .slp replay file.')
     parser.add_argument('slp_path', type=Path, help='Path to the .slp file to parse.')
     parser.add_argument('-s', '--stocks', action='store_true')
@@ -98,9 +99,10 @@ if __name__ == '__main__':
     parser.add_argument('-D', '--debug', action='store_true')
     args = parser.parse_args()
 
+    # set up logging
     logger.remove()
     logger.add(sys.stderr, level='DEBUG' if args.debug else 'INFO')
-    logger.debug(f'debug mode enabled')
+    logger.debug('Debug mode enabled')
 
     _ = parse_replay(args.slp_path, args.stocks, args.ranks)
     logger.info('completed parsing replay with no errors')

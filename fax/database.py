@@ -1,14 +1,18 @@
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 """
 This module houses the DataBase class for indexing and querying .slp files.
+Example usage of some of the queries for an existing db in __main__ at the bottom.
 """
 
 from pathlib import Path
 
 import sqlite3
+from loguru import logger
 
 from fax.slp_reader import ReplayRecord
+from fax.constants import CHARACTER_NAME_TO_ID
 
 
 class DataBase:
@@ -22,6 +26,7 @@ class DataBase:
         self.db_path = db_path
         self.conn = sqlite3.connect(self.db_path)
         self.cursor = self.conn.cursor()
+        logger.debug(f'Connected to database at {self.db_path}')
 
     def create_replays_table(self) -> None:
         """Create the replays table in the database."""
@@ -38,6 +43,7 @@ class DataBase:
             )
         """)
         self.conn.commit()
+        logger.debug('Created ranked_replays table')
         return
 
     def create_errors_table(self) -> None:
@@ -50,6 +56,7 @@ class DataBase:
             )
         """)
         self.conn.commit()
+        logger.debug('Created parse_errors table')
         return
 
     def insert_replay(self, record: ReplayRecord) -> None:
@@ -66,6 +73,7 @@ class DataBase:
             tuple(map(lambda f: getattr(record, f), fields)),
         )
         self.conn.commit()
+        logger.debug(f'Inserted replay {record.file_name} into database')
         return
 
     def insert_error(self, file_name: str, error_message: str) -> None:
@@ -78,6 +86,7 @@ class DataBase:
             (file_name, error_message),
         )
         self.conn.commit()
+        logger.debug(f'Inserted parse error for {file_name} into database')
         return
 
     @property
@@ -92,6 +101,79 @@ class DataBase:
         self.cursor.execute('SELECT COUNT(*) FROM parse_errors')
         return self.cursor.fetchone()[0]
 
+    def query_character(self, char: int | str) -> list[str]:
+        """Query the database for replays involving a specific character (as either player).
+        Args:
+            char: Character ID (name also supported).
+        Returns:
+            List of file names involving the character.
+        """
+        if isinstance(char, str):
+            char = CHARACTER_NAME_TO_ID[char.upper()]
+        self.cursor.execute(
+            """
+            SELECT file_name FROM ranked_replays
+            WHERE p1char = ? OR p2char = ?
+        """,
+            (char, char),
+        )
+        return [row[0] for row in self.cursor.fetchall()]
+
+    def query_matchup(self, p1char: int | str, p2char: int | str) -> list[str]:
+        """Query the database for replays of a specific character matchup (order-agnostic).
+        Args:
+            p1char: Character ID for player 1 (name also supported).
+            p2char: Character ID for player 2 (name also supported).
+        Returns:
+            List of file names matching the character matchup.
+        """
+        if isinstance(p1char, str):
+            p1char = CHARACTER_NAME_TO_ID[p1char.upper()]
+        if isinstance(p2char, str):
+            p2char = CHARACTER_NAME_TO_ID[p2char.upper()]
+        self.cursor.execute(
+            """
+            SELECT file_name FROM ranked_replays
+            WHERE (p1char = ? AND p2char = ?)
+               OR (p1char = ? AND p2char = ?)
+        """,
+            (p1char, p2char, p2char, p1char),
+        )
+        return [row[0] for row in self.cursor.fetchall()]
+
     def close(self) -> None:
         """Close the database connection."""
         self.conn.close()
+
+
+if __name__ == '__main__':
+    import sys
+    from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
+    from fax.paths import PROJECT_ROOT
+
+    parser = ArgumentParser(
+        description='Example usage of the DataBase class linked to an existing SQLite database.',
+        formatter_class=ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument(
+        '--db_path',
+        type=Path,
+        default=PROJECT_ROOT / 'db.sqlite',
+        help='Path to the SQLite database file.',
+    )
+    parser.add_argument('-D', '--debug', action='store_true', help='Enable debug mode.')
+    args = parser.parse_args()
+
+    # set up logging
+    logger.remove()
+    logger.add(sys.stderr, level='DEBUG' if args.debug else 'INFO')
+    logger.debug('Debug mode enabled')
+
+    db = DataBase(args.db_path)
+    fox_games = db.query_character('fox')
+    logger.info(f'Found {len(fox_games)} games with fox in the database')
+    spacies = db.query_matchup('fox', 'falco')
+    logger.info(f'Found {len(spacies)} spacies games in the database')
+    fox_dittos = db.query_matchup('fox', 'fox')
+    logger.info(f'Found {len(fox_dittos)} fox dittos in the database')
+    db.close()
