@@ -96,19 +96,12 @@ def parse_ranked_replay(slp_path: Path) -> RankedReplayRecord:
     # assert that both players are playing on netplay
     if game.start.players[0].netplay is None or game.start.players[1].netplay is None:
         raise ValueError('not a netplay replay')
-    # assert that game ended correctly
-    if game.end.players is None:
-        raise ValueError('game not ended properly')
-    record = RankedReplayRecord(
-        file_name=str(slp_path.name),
-        stage=game.start.stage,
-        p1c=game.start.players[0].character,
-        p2c=game.start.players[1].character,
+    base_record = parse_replay(slp_path)
+    return RankedReplayRecord(
+        **attr.asdict(base_record),
         p1r=game.start.players[0].netplay.name.replace(' Player', ''),
         p2r=game.start.players[1].netplay.name.replace(' Player', ''),
-        winner=1 if game.end.players[0].placement < game.end.players[1].placement else 2,
     )
-    return record
 
 
 def get_stage_name(slp_id: int) -> str:
