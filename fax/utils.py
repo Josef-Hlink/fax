@@ -2,6 +2,22 @@ import random
 import torch
 from tensordict import TensorDict
 
+from functools import wraps
+import time
+from loguru import logger
+
+
+def timed(func):
+    @wraps(func)
+    def functimer(*args, **kwargs):
+        start = time.perf_counter()
+        result = func(*args, **kwargs)
+        elapsed = time.perf_counter() - start
+        logger.debug(f'{func.__name__} executed in {elapsed:.5f}s')
+        return result
+
+    return functimer
+
 
 def generate_random_inputs():
     return {
