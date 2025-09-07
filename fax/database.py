@@ -6,6 +6,7 @@ This module houses the DataBase class for indexing and querying .slp files.
 Example usage of some of the queries for an existing db in __main__ at the bottom.
 """
 
+from typing import List
 from pathlib import Path
 
 import sqlite3
@@ -101,7 +102,12 @@ class DataBase:
         self.cursor.execute('SELECT COUNT(*) FROM parse_errors')
         return self.cursor.fetchone()[0]
 
-    def query_character(self, char: int | str) -> list[str]:
+    def get_faulty_replays(self) -> List[str]:
+        """Return a list of file names that failed to parse."""
+        self.cursor.execute('SELECT file_name FROM parse_errors')
+        return [row[0] for row in self.cursor.fetchall()]
+
+    def query_character(self, char: int | str) -> List[str]:
         """Query the database for replays involving a specific character (as either player).
         Args:
             char: Character ID (name also supported).
@@ -119,7 +125,7 @@ class DataBase:
         )
         return [row[0] for row in self.cursor.fetchall()]
 
-    def query_matchup(self, p1char: int | str, p2char: int | str) -> list[str]:
+    def query_matchup(self, p1char: int | str, p2char: int | str) -> List[str]:
         """Query the database for replays of a specific character matchup (order-agnostic).
         Args:
             p1char: Character ID for player 1 (name also supported).

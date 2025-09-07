@@ -6,6 +6,7 @@ This script converts a directory of .slp files into an MDS dataset.
 """
 
 from itertools import islice
+from typing import List
 from pathlib import Path
 
 from loguru import logger
@@ -19,6 +20,8 @@ from fax.slp_reader import parse_replay
 def main(slp_dir: Path, db_path: Path, n: int = -1) -> None:
     db = setup_database(db_path)
     parse_and_store(slp_dir, db, n)
+    db = DataBase(db_path)
+    remove_faulty_replays(slp_dir, db.get_faulty_replays())
 
 
 def setup_database(db_path: Path) -> DataBase:
@@ -65,6 +68,23 @@ def parse_and_store(slp_dir: Path, db: DataBase, n: int) -> None:
     logger.info(f'{db.n_replays} replays successfully indexed')
     logger.info(f'{db.n_errors} files failed to parse')
 
+    return
+
+
+def remove_faulty_replays(slp_dir: Path, replays: List[str]) -> None:
+    """Remove replay files that resulted in parse errors from the directory."""
+    if not replays:
+        logger.info('No faulty replays to remove')
+        return
+    logger.warning(f'Removing {len(replays)} faulty replay files from {slp_dir}...')
+    for replay in replays:
+        slp_path = slp_dir / replay
+        if slp_path.exists():
+            slp_path.unlink()
+            logger.debug(f'Removed {slp_path}')
+        else:
+            logger.warning(f'File {slp_path} does not exist; cannot remove')
+    logger.info('Finished removing faulty replay files')
     return
 
 
