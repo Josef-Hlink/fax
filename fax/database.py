@@ -170,6 +170,7 @@ if __name__ == '__main__':
     logger.debug('Debug mode enabled')
 
     db = DataBase(args.db_path)
+    logger.info(f'Database has {db.n_replays} replays and {db.n_errors} parse errors')
     fox_games = db.query_character('fox')
     logger.info(f'Found {len(fox_games)} games with fox in the database')
     spacies = db.query_matchup('fox', 'falco')
