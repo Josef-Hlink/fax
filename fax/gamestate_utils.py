@@ -7,13 +7,8 @@ import melee
 import torch
 from tensordict import TensorDict
 
-from fax.constants import (
-    IDX_BY_ACTION,
-    IDX_BY_CHARACTER,
-    IDX_BY_STAGE,
-    CHARACTERS,
-    STAGES,
-)
+from fax.constants import PEPPI_CHARACTER_IDS, PEPPI_STAGE_IDS
+
 
 FrameData = DefaultDict[str, MutableSequence[Any]]
 
@@ -30,7 +25,7 @@ def extract_eval_gamestate_as_tensordict(gamestate: melee.GameState) -> TensorDi
 
 def extract_player_state(player_state: melee.PlayerState) -> Dict[str, Any]:
     player_data = {
-        'character': IDX_BY_CHARACTER[player_state.character],
+        'character': player_state.character,
         'stock': player_state.stock,
         'facing': int(player_state.facing),
         'invulnerable': int(player_state.invulnerable),
@@ -39,7 +34,7 @@ def extract_player_state(player_state: melee.PlayerState) -> Dict[str, Any]:
         'percent': player_state.percent,
         'shield_strength': player_state.shield_strength,
         'jumps_left': player_state.jumps_left,
-        'action': IDX_BY_ACTION[player_state.action],
+        'action': player_state.action,
         'action_frame': player_state.action_frame,
         'invulnerability_left': player_state.invulnerability_left,
         'hitlag_left': player_state.hitlag_left,
@@ -81,18 +76,18 @@ def extract_and_append_gamestate_inplace(
     """
     players = sorted(curr_gamestate.players.items())
     assert len(players) == 2, f'Expected 2 players, got {len(players)}'
-    assert curr_gamestate.stage.name in STAGES, f'Stage {curr_gamestate.stage} not valid'
+    assert curr_gamestate.stage in PEPPI_STAGE_IDS, f'Stage {curr_gamestate.stage} not valid'
 
     if replay_uuid is not None:
         # Duplicate replay_uuid across frames for preprocessing simplicity
         frame_data_by_field['replay_uuid'].append(replay_uuid)
 
     frame_data_by_field['frame'].append(curr_gamestate.frame)
-    frame_data_by_field['stage'].append(IDX_BY_STAGE[curr_gamestate.stage])
+    frame_data_by_field['stage'].append(curr_gamestate.stage)
 
     for i, (port, player_state) in enumerate(players, start=1):
         player_relative = f'p{i}'
-        assert player_state.character.name in CHARACTERS, (
+        assert player_state.character in PEPPI_CHARACTER_IDS, (
             f'Character {player_state.character} not valid'
         )
 
