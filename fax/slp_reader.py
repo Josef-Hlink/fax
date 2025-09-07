@@ -16,7 +16,7 @@ import attr
 from loguru import logger
 from peppi_py import Game, read_slippi
 
-from fax.utils import timed
+from fax.utils import timed, debug_enabled
 from fax.constants import STAGE_ID_TO_NAME, CHARACTER_ID_TO_NAME
 
 
@@ -73,6 +73,10 @@ def parse_replay(
         record.p1rank = game.start.players[0].netplay.name.replace(' Player', '')
         record.p2rank = game.start.players[1].netplay.name.replace(' Player', '')
 
+    if not debug_enabled():
+        return record
+
+    # log all fields if in debug mode
     for field in attr.fields(ReplayRecord):
         key = field.name
         value = getattr(record, key)

@@ -19,6 +19,10 @@ def timed(func):
     return functimer
 
 
+def debug_enabled() -> bool:
+    return logger.level('DEBUG').no >= logger._core.min_level  # type: ignore[attr-defined]
+
+
 def generate_random_inputs():
     return {
         'main_stick': (random.random(), random.random()),
