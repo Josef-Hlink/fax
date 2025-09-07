@@ -37,9 +37,15 @@ NUM_STAGES = len(STAGE_ID_TO_NAME)
 # CHARACTERS #
 ##############
 
+# subset of melee Character enum
+PEPPI_CHARACTER_IDS = list(range(0x00, 0x1A))  # 0x1A is exclusive
+# remove POPO bc we delete all replays with ice climbers
+PEPPI_CHARACTER_IDS.remove(0x0E)
 
+
+# peppi thinks it's funny to use a wildly different enum from slippi for characters
 def peppi_character_to_internal(char_id: int) -> Character:
-    """Peppi thinks it's funny to use a wildly different enum for characters..."""
+    """Convert peppi character id to internal melee Character enum."""
     if char_id == 0x00:
         return Character.CPTFALCON
     if char_id == 0x01:
@@ -94,11 +100,6 @@ def peppi_character_to_internal(char_id: int) -> Character:
         return Character.GANONDORF
     return Character.UNKNOWN_CHARACTER
 
-
-# subset of melee Character enum
-PEPPI_CHARACTER_IDS = list(range(0x00, 0x1A))  # 0x1A is exclusive
-# remove POPO bc we delete all replays with ice climbers
-PEPPI_CHARACTER_IDS.remove(0x0E)
 
 # id -> name
 CHARACTER_ID_TO_NAME: Dict[int, str] = {
