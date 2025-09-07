@@ -1,7 +1,18 @@
 # -*- coding: utf-8 -*-
 
+"""
+Index:
+ - STAGES
+ - CHARACTERS
+ - PLAYERS
+ - ACTIONS
+ - CONTROLLER
+ - EMBEDDINGS
+ - MISC
+"""
+
 from typing import Dict, Tuple, Final, Literal
-from melee import Action, Stage, to_internal_stage, Character
+from melee import Stage, Character, Action, to_internal_stage
 
 import numpy as np
 
@@ -39,8 +50,6 @@ NUM_STAGES = len(STAGE_ID_TO_NAME)
 
 # subset of melee Character enum
 PEPPI_CHARACTER_IDS = list(range(0x00, 0x1A))  # 0x1A is exclusive
-# remove POPO bc we delete all replays with ice climbers
-PEPPI_CHARACTER_IDS.remove(0x0E)
 
 
 # peppi thinks it's funny to use a wildly different enum from slippi for characters
