@@ -6,13 +6,8 @@ After indexing, it will allow for querying the files for building the MDS datase
 for training our different agents, as well as for data analysis for the paper.
 """
 
-import copy
-import os
-import json
 from itertools import islice
-from typing import Optional
 from pathlib import Path
-from multiprocessing import Pool, cpu_count
 
 import attr
 import sqlite3
@@ -23,10 +18,21 @@ from melee import Stage, to_internal_stage, Character
 from .peppi_schema import peppi_character_to_internal
 
 
-def parse_ranked_replays(slp_dir: Path, n: int = -1, debug: bool = False) -> None:
-    print(f'Indexing .slp files in {slp_dir}')
-    print(debug)
-    misses = 0
+def parse_ranked_replays(slp_dir: Path, db_path: Path, n: int = -1, debug: bool = False) -> None:
+    """Parse .slp files in the given directory and index them into an SQLite database.
+    Args:
+        slp_dir: Directory containing .slp files to index.
+        db_path: Path to the SQLite database file.
+        n: Number of files to process. Default is -1 (process all files).
+        debug: If True, print debug information.
+    """
+    slp_dir = slp_dir.expanduser().resolve()
+    assert slp_dir.is_dir(), f'{slp_dir} is not a directory'
+    assert any(slp_dir.rglob('*.slp')), f'No .slp files found in {slp_dir}'
+
+    db_path = db_path.expanduser().resolve()
+    init_database(db_path)
+
     iterator = slp_dir.rglob('*.slp')
     if n > 0:
         total = min(n, sum(1 for _ in slp_dir.rglob('*.slp')))
@@ -37,7 +43,12 @@ def parse_ranked_replays(slp_dir: Path, n: int = -1, debug: bool = False) -> Non
     else:
         raise ValueError('n must be -1 (process all files) or a positive integer')
     if not debug:  # wrap iterator in tqdm for sleeker UI
-        iterator = tqdm(iterator, desc='poop', total=total, disable=debug)
+        iterator = tqdm(
+            iterator, desc=f'Indexing .slp files in {slp_dir}', total=total, disable=debug
+        )
+    else:
+        print(f'Indexing .slp files in {slp_dir}...')
+
     for slp_path in iterator:
         try:
             record = parse_ranked_replay(slp_path)
@@ -52,13 +63,12 @@ def parse_ranked_replays(slp_dir: Path, n: int = -1, debug: bool = False) -> Non
                         print(f'  {key}: {get_character_name(value)} ({value})')
                     else:
                         print(f'  {key}: {value}')
-        # do something with record
+            insert_ranked_replay(db_path, record)
         except Exception as e:
-            # print(f'Error parsing {slp_path}: {e}')
-            misses += 1
-            # keep track of raising files in database too
-            continue
-    print(f'Finished indexing. Missed {misses} files.')
+            if debug:
+                print(f'Failed to parse {slp_path}: {e}')
+            insert_parse_error(db_path, str(slp_path.name), str(e))
+    return
 
 
 @attr.s(auto_attribs=True, slots=True)
@@ -116,3 +126,75 @@ def get_character_name(slp_id: int) -> str:
         return Character(peppi_character_to_internal(slp_id)).name
     except ValueError:
         return f'UNKNOWN_CHARACTER_{slp_id}'
+
+
+def init_database(db_path: Path) -> None:
+    """Initialize the SQLite database with the required schema."""
+    if db_path.exists():
+        raise FileExistsError(
+            f'{db_path} already exists. Please delete it first if you want to overwrite it.'
+        )
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    # table for ranked replays
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS ranked_replays (
+            id INTEGER PRIMARY KEY,
+            file_name TEXT UNIQUE NOT NULL,
+            stage INTEGER NOT NULL,
+            p1c INTEGER NOT NULL,
+            p2c INTEGER NOT NULL,
+            winner INTEGER NOT NULL,
+            p1r TEXT NOT NULL,
+            p2r TEXT NOT NULL
+        )
+    """)
+    # table for files that failed to parse
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS parse_errors (
+            id INTEGER PRIMARY KEY,
+            file_name TEXT UNIQUE NOT NULL,
+            error_message TEXT NOT NULL
+        )
+    """)
+    conn.commit()
+    conn.close()
+    return
+
+
+def insert_ranked_replay(db_path: Path, record: RankedReplayRecord) -> None:
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        INSERT OR IGNORE INTO ranked_replays (file_name, stage, p1c, p2c, winner, p1r, p2r)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """,
+        (
+            record.file_name,
+            record.stage,
+            record.p1c,
+            record.p2c,
+            record.winner,
+            record.p1r,
+            record.p2r,
+        ),
+    )
+    conn.commit()
+    conn.close()
+    return
+
+
+def insert_parse_error(db_path: Path, file_name: str, error_message: str) -> None:
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        INSERT OR IGNORE INTO parse_errors (file_name, error_message)
+        VALUES (?, ?)
+    """,
+        (file_name, error_message),
+    )
+    conn.commit()
+    conn.close()
+    return
