@@ -230,7 +230,8 @@ def process_replays(replay_paths: list[Path], mds_dir: Path, n_workers: int) -> 
 if __name__ == '__main__':
     import sys
     from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
-    from fax.paths import PROJECT_ROOT
+    from fax.paths import DEFAULT_DB_PATH, DEFAULT_MDS_DIR
+    from fax.utils import setup_logger
 
     parser = ArgumentParser(
         description='Index a directory of .slp files into an SQLite database.',
@@ -244,14 +245,14 @@ if __name__ == '__main__':
     parser.add_argument(
         '--db_path',
         type=Path,
-        default=PROJECT_ROOT / 'db.sqlite',
+        default=DEFAULT_DB_PATH,
         help='Path where the SQLite database will be created. '
-        + 'Defaults to <project_root>/db.sqlite.',
+        + 'Defaults to <project_root>/data/index.db.',
     )
     parser.add_argument(
         '--mds_dir',
         type=Path,
-        default=PROJECT_ROOT / 'data' / 'mds',
+        default=DEFAULT_MDS_DIR,
         help='Directory where the MDS dataset will be created. '
         + 'Defaults to <project_root>/data/mds.',
     )
@@ -295,9 +296,6 @@ if __name__ == '__main__':
 
     random.seed(args.seed)
 
-    # set up logging
-    logger.remove()
-    logger.add(sys.stderr, level='DEBUG' if args.debug else 'INFO')
-    logger.debug('Debug mode enabled')
+    setup_logger(args.debug)
 
     main(slp_dir, db_path, mds_dir, args.n, args.w)

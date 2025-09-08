@@ -177,9 +177,9 @@ class DataBase:
 
 
 if __name__ == '__main__':
-    import sys
     from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
-    from fax.paths import PROJECT_ROOT
+    from fax.paths import DEFAULT_DB_PATH, LOG_DIR
+    from fax.utils import setup_logger
 
     parser = ArgumentParser(
         description='Example usage of the DataBase class linked to an existing SQLite database.',
@@ -188,16 +188,13 @@ if __name__ == '__main__':
     parser.add_argument(
         '--db_path',
         type=Path,
-        default=PROJECT_ROOT / 'db.sqlite',
-        help='Path to the SQLite database file.',
+        default=DEFAULT_DB_PATH,
+        help='Path to the SQLite database file. Defaults to <project_root>/data/index.db',
     )
     parser.add_argument('-D', '--debug', action='store_true', help='Enable debug mode.')
     args = parser.parse_args()
 
-    # set up logging
-    logger.remove()
-    logger.add(sys.stderr, level='DEBUG' if args.debug else 'INFO')
-    logger.debug('Debug mode enabled')
+    setup_logger(LOG_DIR / 'database.log', debug=args.debug)
 
     db = DataBase(args.db_path)
     logger.info(

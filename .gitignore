@@ -10,9 +10,8 @@ wheels/
 .venv
 
 # loguru
-Logs
+logs
 
 # data
 data
-db.sqlite
 
