@@ -8,9 +8,11 @@ Example usage in __main__ at the bottom.
 """
 
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import attr
+import numpy as np
+import pyarrow as pa
 from loguru import logger
 from peppi_py import Game, read_slippi
 
@@ -62,8 +64,8 @@ def parse_replay(
     if parse_stocks:
         assert game.frames is not None, 'frames not parsed'
         assert len(game.frames.ports) == 2, 'not a 1v1 game'
-        record.p1stocks = game.frames.ports[0].leader.post.stocks[-1]
-        record.p2stocks = game.frames.ports[1].leader.post.stocks[-1]
+        record.p1stocks = as_int(game.frames.ports[0].leader.post.stocks[-1])
+        record.p2stocks = as_int(game.frames.ports[1].leader.post.stocks[-1])
 
     if parse_ranks:
         assert game.start.players[0].netplay is not None, 'not a netplay replay'
@@ -86,6 +88,15 @@ def parse_replay(
             logger.debug(f'{key}: {value}')
 
     return record
+
+
+def as_int(x: Any) -> int:
+    """Convert Arrow/NumPy scalars or plain numbers to a Python int."""
+    if pa is not None and isinstance(x, pa.Scalar):
+        return int(x.as_py())
+    if isinstance(x, np.generic):
+        return int(x.item())
+    return int(x)
 
 
 if __name__ == '__main__':

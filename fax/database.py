@@ -40,7 +40,9 @@ class DataBase:
                 p2char INTEGER NOT NULL,
                 winner INTEGER NOT NULL,
                 p1rank TEXT NOT NULL,
-                p2rank TEXT NOT NULL
+                p2rank TEXT NOT NULL,
+                p1stocks INTEGER NOT NULL,
+                p2stocks INTEGER NOT NULL
             )
         """)
         self.conn.commit()
@@ -65,7 +67,17 @@ class DataBase:
         assert record.p1rank is not None and record.p2rank is not None, (
             'Ranks must be provided to insert replay'
         )
-        fields = ('file_name', 'stage', 'p1char', 'p2char', 'winner', 'p1rank', 'p2rank')
+        fields = (
+            'file_name',
+            'stage',
+            'p1char',
+            'p2char',
+            'winner',
+            'p1rank',
+            'p2rank',
+            'p1stocks',
+            'p2stocks',
+        )
         self.cursor.execute(
             f"""
             INSERT OR IGNORE INTO ranked_replays ({', '.join(fields)})
@@ -102,10 +114,22 @@ class DataBase:
         self.cursor.execute('SELECT COUNT(*) FROM parse_errors')
         return self.cursor.fetchone()[0]
 
-    def get_faulty_replays(self) -> List[str]:
-        """Return a list of file names that failed to parse."""
+    def get_corrupted_replays(self) -> List[str]:
+        """Files that failed to parse, mostly due to unfilled buffers."""
         self.cursor.execute('SELECT file_name FROM parse_errors')
         return [row[0] for row in self.cursor.fetchall()]
+
+    def get_unfinished_replays(self) -> List[str]:
+        """Files that parsed but were not finished games (e.g. DCs, timeouts)."""
+        self.cursor.execute("""
+            SELECT file_name FROM ranked_replays
+            WHERE p1stocks > 0 AND p2stocks > 0
+        """)
+        return [row[0] for row in self.cursor.fetchall()]
+
+    def get_faulty_replays(self) -> List[str]:
+        """Return a list of all .slp unfit for training."""
+        return self.get_corrupted_replays() + self.get_unfinished_replays()
 
     def query_character(self, char: int | str) -> List[str]:
         """Query the database for replays involving a specific character (as either player).
@@ -176,7 +200,11 @@ if __name__ == '__main__':
     logger.debug('Debug mode enabled')
 
     db = DataBase(args.db_path)
-    logger.info(f'Database has {db.n_replays} replays and {db.n_errors} parse errors')
+    logger.info(
+        f'Database has {db.n_replays} replays,'
+        + f' {len(db.get_unfinished_replays())} of which are unfinished'
+    )
+    logger.info(f'Database has info on {db.n_errors} parse errors in the database')
     fox_games = db.query_character('fox')
     logger.info(f'Found {len(fox_games)} games with fox in the database')
     spacies = db.query_matchup('fox', 'falco')

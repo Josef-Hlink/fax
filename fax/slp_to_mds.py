@@ -18,10 +18,12 @@ from fax.slp_reader import parse_replay
 
 
 def main(slp_dir: Path, db_path: Path, n: int = -1) -> None:
-    db = setup_database(db_path)
-    parse_and_store(slp_dir, db, n)
+    # db = setup_database(db_path)
+    # parse_and_store(slp_dir, db, n)
     db = DataBase(db_path)
-    remove_faulty_replays(slp_dir, db.get_faulty_replays())
+    # remove_faulty_replays(slp_dir, db.get_faulty_replays())
+    fox, nonfox = split_fox_nonfox_files(slp_dir, db)
+    return
 
 
 def setup_database(db_path: Path) -> DataBase:
@@ -60,7 +62,7 @@ def parse_and_store(slp_dir: Path, db: DataBase, n: int) -> None:
     # actually parse and store each file
     for slp_path in iterator:
         try:
-            db.insert_replay(parse_replay(slp_path, parse_ranks=True))
+            db.insert_replay(parse_replay(slp_path, parse_ranks=True, parse_stocks=True))
         except Exception as e:
             db.insert_error(str(slp_path.name), str(e))
 
@@ -86,6 +88,27 @@ def remove_faulty_replays(slp_dir: Path, replays: List[str]) -> None:
             logger.warning(f'File {slp_path} does not exist; cannot remove')
     logger.info('Finished removing faulty replay files')
     return
+
+
+def split_fox_nonfox_files(slp_dir: Path, db: DataBase) -> tuple[set[str], set[str]]:
+    """Split .slp files in the given directory into fox and non-fox files based on database indexing.
+    Args:
+        slp_dir: Directory containing .slp files to index.
+        db: DataBase instance to use for querying indexed records.
+    Returns:
+        A tuple containing two sets: (valid_fox_files, valid_nonfox_files).
+    """
+    all_valid_files = {f.name for f in slp_dir.rglob('*.slp')}
+    logger.debug(f'Found {len(all_valid_files)} valid .slp files in {slp_dir}')
+    indexed_fox_files = set(db.query_character('fox'))
+    logger.debug(f'Found {len(indexed_fox_files)} indexed fox files in database')
+    # take intersection to get valid fox files
+    valid_fox_files = all_valid_files & indexed_fox_files
+    logger.info(f'Found {len(valid_fox_files)} valid fox files in database')
+    # take set difference to get valid non-fox files
+    valid_nonfox_files = all_valid_files - indexed_fox_files
+    logger.info(f'Found {len(valid_nonfox_files)} valid non-fox files in database')
+    return valid_fox_files, valid_nonfox_files
 
 
 if __name__ == '__main__':
@@ -123,9 +146,9 @@ if __name__ == '__main__':
     assert slp_dir.is_dir(), f'{slp_dir} is not a directory'
     assert any(slp_dir.rglob('*.slp')), f'No .slp files found in {slp_dir}'
     db_path = args.db_path.expanduser().resolve()
-    if db_path.exists():
-        logger.error(f'{db_path} already exists; please delete it first')
-        sys.exit(1)
+    # if db_path.exists():
+    #     logger.error(f'{db_path} already exists; please delete it first')
+    #     sys.exit(1)
 
     # set up logging
     logger.remove()
