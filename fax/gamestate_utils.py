@@ -1,4 +1,12 @@
-# largely copied from https://github.com/ericyuegu/hal
+# -*- coding: utf-8 -*-
+
+"""
+Utility functions for extracting and processing game state data from Melee replays
+using libmelee's own GameState representation.
+
+
+Largely copied from https://github.com/ericyuegu/hal
+"""
 
 from collections import defaultdict
 from typing import Any, DefaultDict, Dict, MutableSequence, Optional
@@ -7,7 +15,7 @@ import melee
 import torch
 from tensordict import TensorDict
 
-from fax.constants import PEPPI_CHARACTER_IDS, PEPPI_STAGE_IDS
+from fax.constants import MELEE_CHARACTER_IDS, MELEE_STAGE_IDS
 
 
 FrameData = DefaultDict[str, MutableSequence[Any]]
@@ -15,7 +23,7 @@ FrameData = DefaultDict[str, MutableSequence[Any]]
 
 def extract_eval_gamestate_as_tensordict(gamestate: melee.GameState) -> TensorDict:
     frame_data: FrameData = defaultdict(list)
-    extract_and_append_gamestate_inplace(frame_data, gamestate, include_nana=False)
+    extract_and_append_gamestate_inplace(frame_data, gamestate)
     # Filter out None values within lists and convert to tensors
     return TensorDict(
         {k: torch.tensor(v) for k, v in frame_data.items()},
@@ -25,7 +33,7 @@ def extract_eval_gamestate_as_tensordict(gamestate: melee.GameState) -> TensorDi
 
 def extract_player_state(player_state: melee.PlayerState) -> Dict[str, Any]:
     player_data = {
-        'character': player_state.character,
+        'character': player_state.character.value,
         'stock': player_state.stock,
         'facing': int(player_state.facing),
         'invulnerable': int(player_state.invulnerable),
@@ -34,7 +42,7 @@ def extract_player_state(player_state: melee.PlayerState) -> Dict[str, Any]:
         'percent': player_state.percent,
         'shield_strength': player_state.shield_strength,
         'jumps_left': player_state.jumps_left,
-        'action': player_state.action,
+        'action': player_state.action.value,
         'action_frame': player_state.action_frame,
         'invulnerability_left': player_state.invulnerability_left,
         'hitlag_left': player_state.hitlag_left,
@@ -58,7 +66,6 @@ def extract_and_append_gamestate_inplace(
     curr_gamestate: melee.GameState,
     next_gamestate: Optional[melee.GameState] = None,
     replay_uuid: Optional[int] = None,
-    include_nana: bool = False,
 ) -> FrameData:
     """
     Extract gamestate and controller inputs and store in-place in `frame_data`.
@@ -76,32 +83,23 @@ def extract_and_append_gamestate_inplace(
     """
     players = sorted(curr_gamestate.players.items())
     assert len(players) == 2, f'Expected 2 players, got {len(players)}'
-    assert curr_gamestate.stage in PEPPI_STAGE_IDS, f'Stage {curr_gamestate.stage} not valid'
+    assert curr_gamestate.stage.value in MELEE_STAGE_IDS, f'Stage {curr_gamestate.stage} not valid'
 
     if replay_uuid is not None:
         # Duplicate replay_uuid across frames for preprocessing simplicity
         frame_data_by_field['replay_uuid'].append(replay_uuid)
 
     frame_data_by_field['frame'].append(curr_gamestate.frame)
-    frame_data_by_field['stage'].append(curr_gamestate.stage)
+    frame_data_by_field['stage'].append(curr_gamestate.stage.value)
 
     for i, (port, player_state) in enumerate(players, start=1):
         player_relative = f'p{i}'
-        assert player_state.character in PEPPI_CHARACTER_IDS, (
+        assert player_state.character.value in MELEE_CHARACTER_IDS, (
             f'Character {player_state.character} not valid'
         )
 
         # Player / gamestate data
         player_data = extract_player_state(player_state)
-
-        # Handle Ice Climbers' Nana data (empirically appears in about 5% of games)
-        if include_nana:
-            if player_state.nana is not None:
-                nana_data = extract_player_state(player_state.nana)
-            else:
-                # WARNING: duplicates all keys for player state, place unique items after
-                nana_data = {k: None for k in player_data.keys()}
-            player_data.update({f'nana_{k}': v for k, v in nana_data.items()})
 
         player_data['port'] = port
         for feature_name, value in player_data.items():
