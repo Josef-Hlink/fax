@@ -1,22 +1,23 @@
 from __future__ import annotations
-from typing import cast
+
 import math
+from typing import cast
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from tensordict import TensorDict
 
+from fax.config import Config
 from fax.constants import (
-    NUM_STAGES,
-    STAGE_EMBEDDING_DIM,
-    NUM_CHARACTERS,
+    ACTION_EMBEDDING_DIM,
     CHARACTER_EMBEDDING_DIM,
     NUM_ACTIONS,
-    ACTION_EMBEDDING_DIM,
+    NUM_CHARACTERS,
+    NUM_STAGES,
+    STAGE_EMBEDDING_DIM,
 )
 from fax.processing.preprocessor import Preprocessor
-from fax.config import Config
 
 
 class Model(nn.Module):

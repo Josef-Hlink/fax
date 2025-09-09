@@ -20,7 +20,6 @@ from fax.dataloader import get_dataloaders
 from fax.model import Model
 from fax.processing.preprocessor import Preprocessor
 
-
 TRAIN_LOSSES = []
 VAL_LOSSES = []
 

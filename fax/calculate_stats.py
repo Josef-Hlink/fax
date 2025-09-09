@@ -7,9 +7,10 @@ from typing import Optional
 
 import numpy as np
 import numpy.ma as ma
-from fax.constants import NP_MASK_VALUE
 from loguru import logger
 from streaming import StreamingDataset
+
+from fax.constants import NP_MASK_VALUE
 
 
 def calculate_statistics_for_mds(

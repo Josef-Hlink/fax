@@ -1,14 +1,13 @@
 # largely copied from https://github.com/ericyuegu/hal
 
+import concurrent.futures
+import signal
 import sys
 import time
-import signal
 import traceback
-import concurrent.futures
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict, Generator, List, Optional, Tuple
-from contextlib import contextmanager
-from concurrent.futures import TimeoutError
 
 import attr
 import melee

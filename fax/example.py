@@ -2,11 +2,12 @@
 # -*- coding: utf-8 -*-
 
 import random
+
 from loguru import logger
 
-from fax.paths import REPLAY_OUTPUT
 from fax.emulator_helper import EmulatorManager, find_open_udp_ports
 from fax.gamestate_utils import extract_eval_gamestate_as_tensordict
+from fax.paths import REPLAY_OUTPUT
 
 
 def main():

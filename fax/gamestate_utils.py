@@ -17,7 +17,6 @@ from tensordict import TensorDict
 
 from fax.constants import MELEE_CHARACTER_IDS, MELEE_STAGE_IDS
 
-
 FrameData = DefaultDict[str, MutableSequence[Any]]
 
 

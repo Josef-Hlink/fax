@@ -11,11 +11,10 @@ Index:
  - MISC
 """
 
-from typing import Dict, Tuple, Final, Literal
-from melee import Stage, Character, Action, to_internal_stage
+from typing import Dict, Final, Literal, Tuple
 
 import numpy as np
-
+from melee import Action, Character, Stage, to_internal_stage
 
 ##########
 # STAGES #

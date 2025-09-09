@@ -1,36 +1,37 @@
 # largely copied from https://github.com/ericyuegu/hal
 
-from typing import Any, Callable, Dict, Optional, Tuple, Mapping, cast
 from functools import partial
+from typing import Any, Callable, Dict, Mapping, Optional, Tuple, cast
 
 import attr
-import torch
 import numpy as np
+import torch
 from tensordict import TensorDict
+
+from fax.constants import (
+    ACTION_EMBEDDING_DIM,
+    CHARACTER_EMBEDDING_DIM,
+    INCLUDED_BUTTONS,
+    SHOULDER_CENTERS,
+    STAGE_EMBEDDING_DIM,
+    STICK_CENTERS,
+    Player,
+)
 
 from .transformations import (
     Transformation,
     cast_int32,
+    encode_buttons_one_hot,
+    encode_c_stick_one_hot_coarse,
+    encode_main_stick_one_hot_coarse,
+    encode_shoulder_one_hot_coarse,
     invert_and_normalize,
     normalize,
-    standardize,
-    encode_main_stick_one_hot_coarse,
-    encode_c_stick_one_hot_coarse,
-    encode_shoulder_one_hot_coarse,
-    encode_buttons_one_hot,
-    sample_main_stick_coarse,
-    sample_c_stick_coarse,
-    sample_single_button,
     sample_analog_shoulder_coarse,
-)
-from fax.constants import (
-    Player,
-    STAGE_EMBEDDING_DIM,
-    CHARACTER_EMBEDDING_DIM,
-    ACTION_EMBEDDING_DIM,
-    INCLUDED_BUTTONS,
-    STICK_CENTERS,
-    SHOULDER_CENTERS,
+    sample_c_stick_coarse,
+    sample_main_stick_coarse,
+    sample_single_button,
+    standardize,
 )
 
 

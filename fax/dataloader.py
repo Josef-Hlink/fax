@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, Sequence, Tuple
 
 import torch
-from streaming import StreamingDataset, StreamingDataLoader
+from streaming import StreamingDataLoader, StreamingDataset
 from streaming.base.util import clean_stale_shared_memory
 from tensordict import TensorDict
 

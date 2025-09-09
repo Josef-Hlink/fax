@@ -16,8 +16,8 @@ import pyarrow as pa
 from loguru import logger
 from peppi_py import Game, read_slippi
 
-from fax.utils import timed, debug_enabled
-from fax.constants import STAGE_ID_TO_NAME, CHARACTER_ID_TO_NAME
+from fax.constants import CHARACTER_ID_TO_NAME, STAGE_ID_TO_NAME
+from fax.utils import debug_enabled, timed
 
 
 @attr.s(auto_attribs=True, slots=True)

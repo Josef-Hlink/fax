@@ -8,7 +8,6 @@ All path constants used in the project.
 import tomllib
 from pathlib import Path
 
-
 _PROJ = Path(__file__).parent.parent.resolve()
 _DATA = _PROJ / 'data'
 

@@ -2,22 +2,23 @@ import random
 from pathlib import Path
 from typing import Any, Dict, Set
 
-import torch
 import numpy as np
+import torch
 from tensordict import TensorDict
+
+from fax.config import Config
+from fax.constants import Player, get_opponent
+from fax.stats import FeatureStats, load_dataset_stats
 
 from .configs import (
     InputConfig,
-    get_input_config,
-    get_target_config,
     PostprocessConfig,
+    get_input_config,
     get_postprocess_config,
+    get_target_config,
     preprocess_target_features,
 )
 from .transformations import Transformation
-from fax.constants import Player, get_opponent
-from fax.config import Config
-from fax.stats import FeatureStats, load_dataset_stats
 
 
 class Preprocessor:

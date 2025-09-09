@@ -6,14 +6,14 @@ This module houses the DataBase class for indexing and querying .slp files.
 Example usage of some of the queries for an existing db in __main__ at the bottom.
 """
 
-from typing import List
-from pathlib import Path
-
 import sqlite3
+from pathlib import Path
+from typing import List
+
 from loguru import logger
 
-from fax.slp_reader import ReplayRecord
 from fax.constants import CHARACTER_NAME_TO_ID
+from fax.slp_reader import ReplayRecord
 
 
 class DataBase:
@@ -177,7 +177,8 @@ class DataBase:
 
 
 if __name__ == '__main__':
-    from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
+    from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
+
     from fax.paths import DEFAULT_DB_PATH, LOG_DIR
     from fax.utils import setup_logger
 

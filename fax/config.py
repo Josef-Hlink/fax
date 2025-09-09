@@ -1,5 +1,5 @@
-from typing import Type, Any, Dict
-from argparse import ArgumentParser, Namespace, ArgumentDefaultsHelpFormatter
+from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser, Namespace
+from typing import Any, Dict, Type
 
 import attr
 

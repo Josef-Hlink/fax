@@ -6,27 +6,26 @@ This script converts a directory of .slp files into an MDS dataset.
 """
 
 import hashlib
+import multiprocessing as mp
 import random
 import struct
-import multiprocessing as mp
-from itertools import islice
 from collections import defaultdict
-from typing import Any, Dict, Optional
-from typing import List
+from itertools import islice
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 import melee
 import numpy as np
 from loguru import logger
-from tqdm import tqdm
 from streaming import MDSWriter
+from tqdm import tqdm
 
-from fax.utils import debug_enabled
-from fax.database import DataBase
-from fax.slp_reader import parse_replay
 from fax.constants import NP_MASK_VALUE
-from fax.schema import MDS_DTYPE_STR_BY_COLUMN, NP_TYPE_BY_COLUMN
+from fax.database import DataBase
 from fax.gamestate_utils import FrameData, extract_and_append_gamestate_inplace
+from fax.schema import MDS_DTYPE_STR_BY_COLUMN, NP_TYPE_BY_COLUMN
+from fax.slp_reader import parse_replay
+from fax.utils import debug_enabled
 
 
 def main(slp_dir: Path, db_path: Path, mds_dir: Path, n: int, w: int) -> None:
@@ -229,7 +228,8 @@ def process_replays(replay_paths: list[Path], mds_dir: Path, n_workers: int) -> 
 
 if __name__ == '__main__':
     import sys
-    from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
+    from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
+
     from fax.paths import DEFAULT_DB_PATH, DEFAULT_MDS_DIR
     from fax.utils import setup_logger
 

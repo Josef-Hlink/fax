@@ -6,12 +6,12 @@ import numpy as np
 import torch
 from tensordict import TensorDict
 
-from fax.stats import FeatureStats
 from fax.constants import (
     INCLUDED_BUTTONS,
-    STICK_CENTERS,
     SHOULDER_CENTERS,
+    STICK_CENTERS,
 )
+from fax.stats import FeatureStats
 
 # for type hinting
 Transformation = Callable[..., torch.Tensor]

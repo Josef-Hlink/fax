@@ -4,9 +4,10 @@
 
 import sys
 import time
-from pathlib import Path
-from loguru import logger
 from functools import wraps
+from pathlib import Path
+
+from loguru import logger
 
 
 def timed(func):
