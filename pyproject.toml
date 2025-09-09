@@ -31,3 +31,19 @@ build-backend = "hatchling.build"
 
 [tool.uv.sources]
 melee = { git = "https://github.com/vladfi1/libmelee.git", rev = "dev" }
+
+[tool.ruff]
+line-length = 100
+indent-width = 4
+target-version = "py311"
+
+[tool.ruff.lint]
+extend-select = [
+    "E",  # pycodestyle
+    "F",  # pyflakes
+    "I",  # isort
+]
+
+[tool.ruff.format]
+quote-style = "single"
+
