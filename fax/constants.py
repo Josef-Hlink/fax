@@ -25,7 +25,7 @@ peppi_stage_to_internal = to_internal_stage
 
 # subset of melee Stage enum: FoD, PS, YS, DL, BF, FD
 PEPPI_STAGE_IDS = [0x02, 0x03, 0x08, 0x1C, 0x1F, 0x20]
-MELEE_STAGE_IDS = {peppi_stage_to_internal(sid).value for sid in PEPPI_STAGE_IDS}
+MELEE_STAGE_IDS = [peppi_stage_to_internal(sid).value for sid in PEPPI_STAGE_IDS]
 
 # id -> name
 STAGE_ID_TO_NAME: Dict[int, str] = {
@@ -109,7 +109,7 @@ def peppi_character_to_internal(char_id: int) -> Character:
 
 # subset of melee Character enum
 PEPPI_CHARACTER_IDS = list(range(0x00, 0x1A))  # 0x1A is exclusive
-MELEE_CHARACTER_IDS = {peppi_character_to_internal(cid).value for cid in PEPPI_CHARACTER_IDS}
+MELEE_CHARACTER_IDS = [peppi_character_to_internal(cid).value for cid in PEPPI_CHARACTER_IDS]
 
 # id -> name
 CHARACTER_ID_TO_NAME: Dict[int, str] = {
