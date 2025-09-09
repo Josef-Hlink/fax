@@ -1,6 +1,12 @@
-# largely copied from https://github.com/ericyuegu/hal
+# -*- coding: utf-8 -*-
 
-from typing import Callable, List
+"""
+Transformations for preprocessing and postprocessing model inputs and outputs.
+
+Largely copied from https://github.com/ericyuegu/hal
+"""
+
+from typing import Callable, List, Tuple
 
 import numpy as np
 import torch
@@ -144,9 +150,7 @@ def convert_multi_hot_to_one_hot(buttons_LD: np.ndarray) -> np.ndarray:
 def encode_main_stick_one_hot_coarse(sample: TensorDict, player: str) -> torch.Tensor:
     main_stick_x = sample[f'{player}_main_stick_x']
     main_stick_y = sample[f'{player}_main_stick_y']
-    main_stick_clusters = _get_closest_2D_cluster(
-        main_stick_x, main_stick_y, STICK_CENTERS
-    )
+    main_stick_clusters = _get_closest_2D_cluster(main_stick_x, main_stick_y, STICK_CENTERS)
     one_hot_main_stick = one_hot_from_int(main_stick_clusters, len(STICK_CENTERS))
     return torch.tensor(one_hot_main_stick, dtype=torch.float32)
 
@@ -190,7 +194,7 @@ def encode_buttons_one_hot(sample: TensorDict, player: str) -> torch.Tensor:
 # POSTPROCESSING
 
 
-def sample_main_stick_coarse(pred_C: TensorDict, temperature: float = 1.0) -> tuple[float, float]:
+def sample_main_stick_coarse(pred_C: TensorDict, temperature: float = 1.0) -> Tuple[float, float]:
     main_stick_probs = torch.softmax(pred_C['main_stick'] / temperature, dim=-1)
     main_stick_cluster_idx = torch.multinomial(main_stick_probs, num_samples=1)
     main_stick_x, main_stick_y = torch.split(
@@ -200,12 +204,10 @@ def sample_main_stick_coarse(pred_C: TensorDict, temperature: float = 1.0) -> tu
     return main_stick_x.item(), main_stick_y.item()
 
 
-def sample_c_stick_coarse(pred_C: TensorDict, temperature: float = 1.0) -> tuple[float, float]:
+def sample_c_stick_coarse(pred_C: TensorDict, temperature: float = 1.0) -> Tuple[float, float]:
     c_stick_probs = torch.softmax(pred_C['c_stick'] / temperature, dim=-1)
     c_stick_cluster_idx = torch.multinomial(c_stick_probs, num_samples=1)
-    c_stick_x, c_stick_y = torch.split(
-        torch.tensor(STICK_CENTERS[c_stick_cluster_idx]), 1, dim=-1
-    )
+    c_stick_x, c_stick_y = torch.split(torch.tensor(STICK_CENTERS[c_stick_cluster_idx]), 1, dim=-1)
 
     return c_stick_x.item(), c_stick_y.item()
 
