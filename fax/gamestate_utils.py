@@ -15,7 +15,12 @@ import melee
 import torch
 from tensordict import TensorDict
 
-from fax.constants import MELEE_CHARACTER_IDS, MELEE_STAGE_IDS
+from fax.constants import (
+    MELEE_CHARACTER_ID_TO_INDEX,
+    MELEE_CHARACTER_IDS,
+    MELEE_STAGE_ID_TO_INDEX,
+    MELEE_STAGE_IDS,
+)
 
 FrameData = DefaultDict[str, MutableSequence[Any]]
 
@@ -32,7 +37,7 @@ def extract_eval_gamestate_as_tensordict(gamestate: melee.GameState) -> TensorDi
 
 def extract_player_state(player_state: melee.PlayerState) -> Dict[str, Any]:
     player_data = {
-        'character': player_state.character.value,
+        'character': MELEE_CHARACTER_ID_TO_INDEX[player_state.character.value],
         'stock': player_state.stock,
         'facing': int(player_state.facing),
         'invulnerable': int(player_state.invulnerable),
@@ -89,7 +94,7 @@ def extract_and_append_gamestate_inplace(
         frame_data_by_field['replay_uuid'].append(replay_uuid)
 
     frame_data_by_field['frame'].append(curr_gamestate.frame)
-    frame_data_by_field['stage'].append(curr_gamestate.stage.value)
+    frame_data_by_field['stage'].append(MELEE_STAGE_ID_TO_INDEX[curr_gamestate.stage.value])
 
     for i, (port, player_state) in enumerate(players, start=1):
         player_relative = f'p{i}'

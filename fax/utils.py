@@ -22,6 +22,9 @@ def timed(func):
     return functimer
 
 
+_DEBUG_ENABLED = False
+
+
 def setup_logger(path: Path, debug: bool = False, suppress_stderr: bool = False) -> None:
     """Set up the logger to log to a file and optionally to stderr.
     Args:
@@ -29,6 +32,8 @@ def setup_logger(path: Path, debug: bool = False, suppress_stderr: bool = False)
         debug: If True, set log level to DEBUG, else INFO.
         suppress_stderr: If True, do not log to stderr.
     """
+    global _DEBUG_ENABLED
+    _DEBUG_ENABLED = debug
     logger.remove()  # remove default logger
     logger.add(path, level='TRACE', enqueue=True)  # always log to file
     if suppress_stderr:
@@ -39,4 +44,4 @@ def setup_logger(path: Path, debug: bool = False, suppress_stderr: bool = False)
 
 
 def debug_enabled() -> bool:
-    return logger.level('DEBUG').no >= logger._core.min_level  # type: ignore[attr-defined]
+    return _DEBUG_ENABLED

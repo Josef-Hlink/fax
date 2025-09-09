@@ -12,7 +12,7 @@ import struct
 from collections import defaultdict
 from itertools import islice
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import melee
 import numpy as np
@@ -29,12 +29,27 @@ from fax.utils import debug_enabled
 
 
 def main(slp_dir: Path, db_path: Path, mds_dir: Path, n: int, w: int) -> None:
+    # initialize tables
     db = setup_database(db_path)
+    # parse and index .slp files
     parse_and_store(slp_dir, db, n)
+    # remove faulty replays from disk
     remove_faulty_replays(slp_dir, db.get_faulty_replays())
-    fox, nonfox = split_fox_nonfox_files(slp_dir, db)
-    process_replays([slp_dir / f for f in fox], mds_dir / 'fox', n_workers=w)
-    process_replays([slp_dir / f for f in nonfox], mds_dir / 'nonfox', n_workers=w)
+    # split files into fox dittos, one-fox, and no-fox datasets
+    twofox, onefox, nofox = split_on_fox(slp_dir, db)
+    # first write the dittos (they don't need to be split in train/val)
+    twofox_files = [slp_dir / f for f in twofox]
+    random.shuffle(twofox_files)
+    process_replays(twofox_files, mds_dir / 'twofox', n_workers=w)
+    # then write the one-fox and no-fox datasets (they get split in train/val)
+    for datasetname, filenames in [('onefox', onefox), ('nofox', nofox)]:
+        files = list(slp_dir / f for f in filenames)
+        random.shuffle(files)
+        splits = split_train_val(files, split=0.95)
+        for split, data in splits.items():
+            split_output_dir = mds_dir / datasetname / split
+            split_output_dir.mkdir(parents=True, exist_ok=True)
+            process_replays(data, split_output_dir, n_workers=w)
     return
 
 
@@ -102,25 +117,24 @@ def remove_faulty_replays(slp_dir: Path, replays: List[str]) -> None:
     return
 
 
-def split_fox_nonfox_files(slp_dir: Path, db: DataBase) -> tuple[set[str], set[str]]:
-    """Split .slp files in the given directory into fox and non-fox files based on database indexing.
-    Args:
-        slp_dir: Directory containing .slp files to index.
-        db: DataBase instance to use for querying indexed records.
-    Returns:
-        A tuple containing two sets: (valid_fox_files, valid_nonfox_files).
-    """
+def split_on_fox(slp_dir: Path, db: DataBase) -> Tuple[set[str], set[str], set[str]]:
+    """Split .slp files into fox dittos, one-fox, and no-fox datasets."""
+    # all .slp files that still exist on disk are valid (problematic ones were deleted)
     all_valid_files = {f.name for f in slp_dir.rglob('*.slp')}
     logger.debug(f'Found {len(all_valid_files)} valid .slp files in {slp_dir}')
-    indexed_fox_files = set(db.query_character('fox'))
-    logger.debug(f'Found {len(indexed_fox_files)} indexed fox files in database')
-    # take intersection to get valid fox files
-    valid_fox_files = all_valid_files & indexed_fox_files
-    logger.info(f'Found {len(valid_fox_files)} valid fox files in database')
-    # take set difference to get valid non-fox files
-    valid_nonfox_files = all_valid_files - indexed_fox_files
-    logger.info(f'Found {len(valid_nonfox_files)} valid non-fox files in database')
-    return valid_fox_files, valid_nonfox_files
+    # check index for all fox files and fox dittos
+    indexed_fox = set(db.query_character('fox'))
+    indexed_dittos = set(db.query_matchup('fox', 'fox'))
+    logger.debug(f'Found {len(indexed_fox)} indexed fox files in database')
+    logger.debug(f'Found {len(indexed_dittos)} fox ditto files in database')
+    # set operations
+    onefox_files = (indexed_fox - indexed_dittos) & all_valid_files
+    logger.info(f'Arrived at {len(onefox_files)} valid one-fox replays')
+    twofox_files = indexed_dittos & all_valid_files
+    logger.info(f'Arrived at {len(twofox_files)} valid fox ditto replays')
+    nofox_files = all_valid_files - indexed_fox
+    logger.info(f'Arrived at {len(nofox_files)} valid no-fox replays')
+    return twofox_files, onefox_files, nofox_files
 
 
 def hash_to_int32(data: str) -> int:
@@ -196,33 +210,26 @@ def process_replays(replay_paths: list[Path], mds_dir: Path, n_workers: int) -> 
     """
 
     logger.info(f'Processing {len(replay_paths)} replays into MDS dataset at {mds_dir}...')
-    random.shuffle(replay_paths)
 
-    splits = split_train_val(input_paths=replay_paths, split=0.95)
-    for split, split_replay_paths in splits.items():
-        split_output_dir = mds_dir / split
-        split_output_dir.mkdir(parents=True, exist_ok=True)
-
-        if (n_replays := len(split_replay_paths)) == 0:
-            logger.info(f'No replays found for {split} split')
-            continue
-
-        logger.info(f'Writing {n_replays} replays to {split_output_dir}')
-        actual = 0
-        with MDSWriter(
-            out=str(split_output_dir),
-            columns=MDS_DTYPE_STR_BY_COLUMN,
-            compression='zstd',
-            size_limit=1 << 31,  # Write 2GB shards, data is repetitive so compression is 10-20x
-            exist_ok=True,
-        ) as out:
-            with mp.Pool(n_workers) as pool:
-                samples = pool.imap_unordered(process_replay, split_replay_paths)
-                for sample in tqdm(samples, total=n_replays, desc=f'Processing {split} split'):
-                    if sample is not None:
-                        out.write(sample)
-                        actual += 1
-        logger.info(f'Wrote {actual} replays ({actual / n_replays:.2%}) to {split_output_dir}')
+    processed = 0
+    with MDSWriter(
+        out=mds_dir.as_posix(),
+        columns=MDS_DTYPE_STR_BY_COLUMN,
+        compression='zstd',
+        size_limit=1 << 31,  # Write 2GB shards, data is repetitive so compression is 10-20x
+        exist_ok=True,
+    ) as out:
+        with mp.Pool(n_workers) as pool:
+            samples = pool.imap_unordered(process_replay, replay_paths)
+            for sample in tqdm(
+                samples, total=len(replay_paths), desc=f'Processing {mds_dir.name} split'
+            ):
+                if sample is not None:
+                    processed += 1
+                    out.write(sample)
+                else:
+                    logger.debug('Skipping invalid replay sample')
+    logger.info(f'Wrote {processed} replays to {mds_dir}')
     return
 
 
@@ -230,7 +237,7 @@ if __name__ == '__main__':
     import sys
     from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 
-    from fax.paths import DEFAULT_DB_PATH, DEFAULT_MDS_DIR
+    from fax.paths import DEFAULT_DB_PATH, DEFAULT_MDS_DIR, LOG_DIR
     from fax.utils import setup_logger
 
     parser = ArgumentParser(
@@ -296,6 +303,6 @@ if __name__ == '__main__':
 
     random.seed(args.seed)
 
-    setup_logger(args.debug)
+    setup_logger(LOG_DIR / 'slp_to_mds.log', args.debug)
 
     main(slp_dir, db_path, mds_dir, args.n, args.w)
