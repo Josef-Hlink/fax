@@ -11,7 +11,7 @@ from pathlib import Path
 _PROJ = Path(__file__).parent.parent.resolve()
 _DATA = _PROJ / 'data'
 
-with open(_PROJ / 'paths.toml', 'rb') as f:
+with open(_PROJ / 'config.toml', 'rb') as f:
     paths_config = tomllib.load(f)
 ISO = Path(paths_config['paths']['ISO']).expanduser().resolve()
 EXE = Path(paths_config['paths']['EXE']).expanduser().resolve()
