@@ -16,6 +16,7 @@ from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
 from fax.config import Config, create_parser, parse_args
+from fax.paths import _DATA
 from fax.dataloader import get_dataloaders
 from fax.model import Model
 from fax.processing.preprocessor import Preprocessor
@@ -144,11 +145,8 @@ def validate(model, val_loader, device):
     return avg_loss, avg_losses
 
 
-def main():
+def main(config: Config):
     """Main training loop."""
-    parser = argparse.ArgumentParser()
-    parser = create_parser(Config, parser)
-    config = parse_args(Config, parser.parse_args())
 
     device = torch.device('cuda' if config.n_gpus > 0 else 'cpu')
 
@@ -195,13 +193,13 @@ def main():
         print(f'  Val Losses by Head:   {val_losses}')
 
     print('\nTraining completed!')
-    # save losses to npy files
-    np.save('../data/train_losses.npy', np.array(TRAIN_LOSSES))
-    np.save('../data/val_losses.npy', np.array(VAL_LOSSES))
-
-    # Save the final model
-    torch.save(model.state_dict(), '../data/fax_model_final.pth')
+    np.save(_DATA / 'train_losses.npy', np.array(TRAIN_LOSSES))
+    np.save(_DATA / 'val_losses.npy', np.array(VAL_LOSSES))
+    torch.save(model.state_dict(), _DATA / 'fax_model_final.pth')
 
 
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser()
+    parser = create_parser(Config, parser)
+    config = parse_args(Config, parser.parse_args())
+    main(config)

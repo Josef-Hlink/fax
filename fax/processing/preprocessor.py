@@ -37,7 +37,7 @@ class Preprocessor:
 
     def __init__(self, config: Config) -> None:
         self.config = config
-        self.stats = load_dataset_stats(Path(config.data_dir) / 'train')
+        self.stats = load_dataset_stats(Path(config.data_dir))
         self.normalization_fn_by_feature_name: Dict[str, Transformation] = {}  # TODO: check used
         self.seq_len = config.seq_len
 
