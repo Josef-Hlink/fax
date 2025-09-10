@@ -16,7 +16,7 @@ import attr
 import numpy as np
 import numpy.ma as ma
 from loguru import logger
-from streaming import StreamingDataset
+from streaming import Stream, StreamingDataset
 from tqdm import tqdm
 
 from fax.constants import NP_MASK_VALUE
@@ -48,10 +48,17 @@ def calculate_dataset_stats(path: Path) -> None:
     """Calculate and save statistics for each feature in the MDS dataset to a JSON.
 
     Args:
-        path (Path): Path to the directory containing the dataset.
-            stats.json will be saved in this directory.
+        path (Path): Path of the MDS dataset directory.
+    This directory should contain either an index.json file or
+    'train' and 'val' subdirectories (which then do contain index.json files).
+    The statistics will be saved to stats.json in this directory (top-level).
     """
-    dataset = StreamingDataset(local=path.as_posix(), remote=None, batch_size=1, shuffle=False)
+    if (path / 'index.json').exists():
+        streams = [Stream(local=path.as_posix())]
+    else:  # look for 'train' and 'val' subdirectories
+        streams = [Stream(local=split.as_posix()) for split in [path / 'train', path / 'val']]
+
+    dataset = StreamingDataset(streams=streams, batch_size=1, shuffle=False)
     statistics = {}
     logger.info(f'Starting statistics calculation for dataset at {path}')
 
