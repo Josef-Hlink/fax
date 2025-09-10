@@ -152,6 +152,9 @@ ACTION_ID_TO_NAME: Dict[Action, str] = {action: action.name for action in Action
 
 ACTION_NAME_TO_ID: Dict[str, Action] = {action.name: action for action in Action}
 
+MELEE_ACTION_IDS = [action.value for action in Action]
+MELEE_ACTION_ID_TO_INDEX = {action.value: i for i, action in enumerate(Action)}
+
 NUM_ACTIONS = len(ACTION_ID_TO_NAME)
 
 

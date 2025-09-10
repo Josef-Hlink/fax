@@ -76,6 +76,29 @@ def train_epoch(model, train_loader, optimizer, scheduler, device, epoch):
 
         # Forward pass
         optimizer.zero_grad()
+
+        # Debug: Check for out-of-bounds indices
+        # if batch_idx == 0 or batch_idx % 100 == 0:  # Check periodically
+        for key, tensor in inputs.items():
+            if key == 'stage' and tensor.max() >= model.stage_emb.num_embeddings:
+                print(
+                    f'Stage index out of bounds: max={tensor.max()}, limit={model.stage_emb.num_embeddings}'
+                )
+            elif (
+                key in ['ego_character', 'opponent_character']
+                and tensor.max() >= model.character_emb.num_embeddings
+            ):
+                print(
+                    f'Character index out of bounds: max={tensor.max()}, limit={model.character_emb.num_embeddings}'
+                )
+            elif (
+                key in ['ego_action', 'opponent_action']
+                and tensor.max() >= model.action_emb.num_embeddings
+            ):
+                print(
+                    f'Action index out of bounds: max={tensor.max()}, limit={model.action_emb.num_embeddings}'
+                )
+
         outputs = model(inputs)
 
         # Compute loss

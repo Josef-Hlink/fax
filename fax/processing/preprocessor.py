@@ -7,7 +7,7 @@ import torch
 from tensordict import TensorDict
 
 from fax.config import Config
-from fax.constants import Player, get_opponent
+from fax.constants import Player, get_opponent, MELEE_ACTION_ID_TO_INDEX
 from fax.stats import FeatureStats, load_dataset_stats
 
 from .configs import (
@@ -212,9 +212,24 @@ def preprocess_input_features(
 
     Does not slice or shift any features.
     """
+    from fax.constants import MELEE_ACTION_ID_TO_INDEX
+
     opponent = get_opponent(ego)
     transformation_by_feature_name = config.transformation_by_feature_name
     processed_features: Dict[str, torch.Tensor] = {}
+
+    # Convert action IDs to indices before processing
+    for player in (ego, opponent):
+        action_key = f'{player}_action'
+        if action_key in sample_T:
+            raw_actions = sample_T[action_key]
+            # Convert melee action IDs to indices
+            indexed_actions = torch.tensor(
+                [MELEE_ACTION_ID_TO_INDEX.get(action.item(), 0) for action in raw_actions],
+                dtype=torch.int32,
+                device=raw_actions.device,
+            )
+            sample_T[action_key] = indexed_actions
 
     # Process player features
     for player in (ego, opponent):

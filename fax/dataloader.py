@@ -53,6 +53,11 @@ class FAXStreamingDataset(StreamingDataset):
         # Convert numpy arrays to TensorDict
         episode_td = convert_ndarray_to_tensordict(episode_data)
 
+        # Skip episodes that are too short
+        if episode_td.shape[0] < self.preprocessor.trajectory_sampling_len:
+            # Return a different episode by recursively calling with a new index
+            return self.__getitem__((idx + 1) % len(self))
+
         # Sample a subsequence for training
         sample_td = self.preprocessor.sample_from_episode(episode_td, debug=not self.is_train)
 
