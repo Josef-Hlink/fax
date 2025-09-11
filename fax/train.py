@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 """
 Training script for FAX - Fox imitation learning on Melee replays.
 
@@ -6,26 +8,58 @@ This script brings together the dataloader, model, and training loop
 to demonstrate how all components interact.
 """
 
-import argparse
-import time
+import random
+from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 
-import numpy as np
 import torch
 import torch.nn.functional as F
+from loguru import logger
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
+from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 from fax.config import Config, create_parser, parse_args
-from fax.paths import _DATA
 from fax.dataloader import get_dataloaders
 from fax.model import Model
+from fax.paths import LOG_DIR
 from fax.processing.preprocessor import Preprocessor
-
-TRAIN_LOSSES = []
-VAL_LOSSES = []
+from fax.utils import setup_logger
 
 
-def compute_loss(outputs, targets):
+def main(config: Config):
+    """Main training loop."""
+
+    random.seed(config.seed)
+    device = torch.device('cuda' if config.n_gpus > 0 else 'cpu')
+
+    preprocessor = Preprocessor(config)
+    model = Model(preprocessor=preprocessor, config=config)
+    model = model.to(device)
+    logger.debug(f'Model: {sum(p.numel() for p in model.parameters()):,} total parameters')
+
+    train_loader, val_loader = get_dataloaders(config)
+
+    # create optimizer and scheduler
+    optimizer = AdamW(
+        model.parameters(), lr=config.lr, weight_decay=config.wd, betas=(config.b1, config.b2)
+    )
+    total_steps = len(train_loader) * config.n_epochs
+    scheduler = CosineAnnealingLR(optimizer, T_max=total_steps)
+
+    logger.info(f'Training for {config.n_epochs} epochs, {len(train_loader)} batches per epoch')
+    logger.info(f'Total training steps: {total_steps}')
+
+    # training loop
+    for epoch in range(config.n_epochs):
+        tl = train_epoch(model, train_loader, optimizer, scheduler, device, epoch + 1)
+        vl = validate(model, val_loader, device)
+        logger.info(f'epoch {epoch + 1}: avg. {tl=:.4f}, {vl:.4f}')
+
+    logger.info('\nTraining completed!')
+
+
+def compute_loss(outputs, targets) -> torch.Tensor:
     """
     Compute loss for each controller head.
 
@@ -34,195 +68,78 @@ def compute_loss(outputs, targets):
         targets: Ground truth targets (TensorDict with same keys)
 
     Returns:
-        Total loss and individual losses dict
+        Total loss as a single scalar tensor.
     """
     losses = {}
 
-    # Cross-entropy loss for each head (all are categorical)
+    # cross-entropy loss for each head (all are categorical)
     for head_name in ['main_stick', 'c_stick', 'buttons', 'shoulder']:
-        if head_name in outputs and head_name in targets:
-            # outputs[head_name]: (B, L, num_classes)
-            # targets[head_name]: (B, L, num_classes) - one-hot encoded
+        # convert one-hot targets to class indices
+        target_indices = targets[head_name].argmax(dim=-1)  # (B, L)
 
-            # Convert one-hot targets to class indices
-            target_indices = targets[head_name].argmax(dim=-1)  # (B, L)
+        # reshape for cross-entropy: (B*L, num_classes) and (B*L,)
+        B, L, C = outputs[head_name].shape
+        pred_flat = outputs[head_name].view(B * L, C)
+        target_flat = target_indices.view(B * L)
 
-            # Reshape for cross-entropy: (B*L, num_classes) and (B*L,)
-            B, L, C = outputs[head_name].shape
-            pred_flat = outputs[head_name].view(B * L, C)
-            target_flat = target_indices.view(B * L)
+        losses[head_name] = F.cross_entropy(pred_flat, target_flat)
 
-            losses[head_name] = F.cross_entropy(pred_flat, target_flat)
-
-    # Total loss is sum of individual losses
-    total_loss = sum(losses.values())
-
-    return total_loss, losses
+    # total loss is sum of individual losses
+    return torch.stack(list(losses.values())).sum()
 
 
-def train_epoch(model, train_loader, optimizer, scheduler, device, epoch):
+def train_epoch(
+    model: Model,
+    train_loader: DataLoader,
+    optimizer: AdamW,
+    scheduler: CosineAnnealingLR,
+    device: torch.device,
+    epoch: int,
+) -> float:
     """Train for one epoch."""
     model.train()
     total_loss = 0.0
-    total_losses = {}
-    num_batches = 0
 
-    start_time = time.time()
-
-    for batch_idx, batch in enumerate(train_loader):
-        # Move to device
-        inputs = batch['inputs'].to(device)
-        targets = batch['targets'].to(device)
-
-        # Forward pass
+    for sample in (pbar := tqdm(train_loader, desc=f'Training Epoch {epoch}')):
+        # move to device
+        inputs = sample['inputs'].to(device)
+        targets = sample['targets'].to(device)
+        # forward pass
         optimizer.zero_grad()
-
-        # Debug: Check for out-of-bounds indices
-        # if batch_idx == 0 or batch_idx % 100 == 0:  # Check periodically
-        for key, tensor in inputs.items():
-            if key == 'stage' and tensor.max() >= model.stage_emb.num_embeddings:
-                print(
-                    f'Stage index out of bounds: max={tensor.max()}, limit={model.stage_emb.num_embeddings}'
-                )
-            elif (
-                key in ['ego_character', 'opponent_character']
-                and tensor.max() >= model.character_emb.num_embeddings
-            ):
-                print(
-                    f'Character index out of bounds: max={tensor.max()}, limit={model.character_emb.num_embeddings}'
-                )
-            elif (
-                key in ['ego_action', 'opponent_action']
-                and tensor.max() >= model.action_emb.num_embeddings
-            ):
-                print(
-                    f'Action index out of bounds: max={tensor.max()}, limit={model.action_emb.num_embeddings}'
-                )
-
         outputs = model(inputs)
-
-        # Compute loss
-        loss, losses = compute_loss(outputs, targets)
-
-        # Backward pass
+        # compute loss
+        loss = compute_loss(outputs, targets)
+        # backward pass
         loss.backward()
         optimizer.step()
         scheduler.step()
-
-        # Accumulate losses
+        # accumulate and log loss
         total_loss += loss.item()
-        for head_name, head_loss in losses.items():
-            if head_name not in total_losses:
-                total_losses[head_name] = 0.0
-            total_losses[head_name] += head_loss.item()
+        pbar.set_postfix({'loss': loss.item()})
 
-        num_batches += 1
-
-        # Print progress
-        if batch_idx % 10 == 0:
-            elapsed = time.time() - start_time
-            print(
-                f'Epoch {epoch}, Batch {batch_idx:3d}: '
-                f'Loss {loss.item():.4f}, '
-                f'LR {scheduler.get_last_lr()[0]:.6f}, '
-                f'Time {elapsed:.1f}s'
-            )
-
-        # store loss in global list
-        TRAIN_LOSSES.append(loss.item())
-
-    # Average losses
-    avg_loss = total_loss / num_batches
-    avg_losses = {k: v / num_batches for k, v in total_losses.items()}
-
-    return avg_loss, avg_losses
+    # average loss
+    return total_loss / len(train_loader)
 
 
-def validate(model, val_loader, device):
+def validate(model: Model, val_loader: DataLoader, device: torch.device) -> float:
     """Validate the model."""
     model.eval()
     total_loss = 0.0
-    total_losses = {}
-    num_batches = 0
 
     with torch.no_grad():
         for batch in val_loader:
             inputs = batch['inputs'].to(device)
             targets = batch['targets'].to(device)
-
             outputs = model(inputs)
-            loss, losses = compute_loss(outputs, targets)
-
+            loss = compute_loss(outputs, targets)
             total_loss += loss.item()
-            for head_name, head_loss in losses.items():
-                if head_name not in total_losses:
-                    total_losses[head_name] = 0.0
-                total_losses[head_name] += head_loss.item()
 
-            num_batches += 1
-
-    avg_loss = total_loss / num_batches
-    avg_losses = {k: v / num_batches for k, v in total_losses.items()}
-    VAL_LOSSES.append(avg_loss)
-
-    return avg_loss, avg_losses
-
-
-def main(config: Config):
-    """Main training loop."""
-
-    device = torch.device('cuda' if config.n_gpus > 0 else 'cpu')
-
-    preprocessor = Preprocessor(config)
-    model = Model(preprocessor=preprocessor, config=config)
-    model = model.to(device)
-
-    # Print model info
-    total_params = sum(p.numel() for p in model.parameters())
-    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f'Model: {total_params:,} total parameters, {trainable_params:,} trainable')
-
-    # Create dataloaders
-    print('Creating dataloaders...')
-    train_loader, val_loader = get_dataloaders(config)
-
-    # Create optimizer and scheduler
-    optimizer = AdamW(
-        model.parameters(), lr=config.lr, weight_decay=config.wd, betas=(config.b1, config.b2)
-    )
-    total_steps = len(train_loader) * config.n_epochs
-    scheduler = CosineAnnealingLR(optimizer, T_max=total_steps)
-
-    print(f'Training for {config.n_epochs} epochs, {len(train_loader)} batches per epoch')
-    print(f'Total training steps: {total_steps}')
-
-    # Training loop
-    for epoch in range(config.n_epochs):
-        print(f'\n=== Epoch {epoch + 1}/{config.n_epochs} ===')
-
-        # Train
-        train_loss, train_losses = train_epoch(
-            model, train_loader, optimizer, scheduler, device, epoch + 1
-        )
-
-        # Validate
-        val_loss, val_losses = validate(model, val_loader, device)
-
-        # Print epoch summary
-        print(f'\nEpoch {epoch + 1} Summary:')
-        print(f'  Train Loss: {train_loss:.4f}')
-        print(f'  Val Loss:   {val_loss:.4f}')
-        print(f'  Train Losses by Head: {train_losses}')
-        print(f'  Val Losses by Head:   {val_losses}')
-
-    print('\nTraining completed!')
-    np.save(_DATA / 'train_losses.npy', np.array(TRAIN_LOSSES))
-    np.save(_DATA / 'val_losses.npy', np.array(VAL_LOSSES))
-    torch.save(model.state_dict(), _DATA / 'fax_model_final.pth')
+    return total_loss / len(val_loader)
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
+    parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
     parser = create_parser(Config, parser)
     config = parse_args(Config, parser.parse_args())
+    setup_logger(LOG_DIR / 'training.log', config.debug)
     main(config)

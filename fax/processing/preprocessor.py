@@ -7,7 +7,7 @@ import torch
 from tensordict import TensorDict
 
 from fax.config import Config
-from fax.constants import Player, get_opponent, MELEE_ACTION_ID_TO_INDEX
+from fax.constants import MELEE_ACTION_ID_TO_INDEX, Player, get_opponent
 from fax.stats import FeatureStats, load_dataset_stats
 
 from .configs import (

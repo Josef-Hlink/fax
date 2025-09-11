@@ -10,6 +10,7 @@ class Config:
     debug: bool = False
     seed: int = 42
     n_gpus: int = 1
+    n_dataworkers: int = 4
     batch_size: int = 64
     n_samples: int = 2**10
     n_eval_samples: int = 2**8
@@ -32,6 +33,7 @@ class Help:
     data_dir = '[REQUIRED] Path to MDS data directory with train/val/test splits and stats.json'
     seed = 'Random seed for reproducibility'
     n_gpus = 'Number of GPUs to use for training [0 for CPU]'
+    n_dataworkers = 'Number of mosaicml data loader workers'
     debug = 'More verbose logging'
     batch_size = 'Batch size for training'  # TODO: confirm
     n_samples = 'Number of training samples to use [-1 for all]'  # TODO: confirm

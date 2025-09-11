@@ -113,7 +113,7 @@ def get_dataloaders(config: Config) -> Tuple[StreamingDataLoader, StreamingDataL
         train_dataset,
         batch_size=batch_size,
         collate_fn=collate_tensordicts,
-        num_workers=2,  # TODO: make configurable
+        num_workers=config.n_dataworkers,
         pin_memory=True,
         persistent_workers=False,
         prefetch_factor=2,
@@ -123,7 +123,7 @@ def get_dataloaders(config: Config) -> Tuple[StreamingDataLoader, StreamingDataL
         val_dataset,
         batch_size=batch_size,
         collate_fn=collate_tensordicts,
-        num_workers=2,
+        num_workers=config.n_dataworkers,
         pin_memory=True,
         persistent_workers=False,
         prefetch_factor=2,
