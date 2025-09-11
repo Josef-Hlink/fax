@@ -22,7 +22,7 @@ from tqdm import tqdm
 from fax.config import Config, create_parser, parse_args
 from fax.dataloader import get_dataloaders
 from fax.model import Model
-from fax.paths import LOG_DIR
+from fax.paths import _DATA, LOG_DIR
 from fax.processing.preprocessor import Preprocessor
 from fax.utils import setup_logger
 from fax.writer import WandbConfig, Writer
@@ -37,6 +37,15 @@ def main(config: Config):
     preprocessor = Preprocessor(config)
     model = Model(preprocessor=preprocessor, config=config)
     model = model.to(device)
+
+    # load checkpoint
+    model_path = _DATA / 'model_final3.pth'
+    if model_path.exists():
+        model.load_state_dict(torch.load(model_path, map_location=device))
+        logger.info(f'Loaded model from {model_path}')
+    else:
+        logger.info('No checkpoint found, training from scratch.')
+
     logger.debug(f'Model: {sum(p.numel() for p in model.parameters()):,} total parameters')
 
     wandb_config = WandbConfig.create(train_config=config)
@@ -63,6 +72,10 @@ def main(config: Config):
         logger.info(f'epoch {epoch + 1}: avg. {tl=:.4f}, {vl:.4f}')
 
     logger.info('\nTraining completed!')
+
+    # save final model
+    torch.save(model.state_dict(), _DATA / 'model_final3.pth')
+    logger.info(f'Model saved to {_DATA / "model_final3.pth"}')
 
 
 def compute_loss(outputs, targets) -> torch.Tensor:
