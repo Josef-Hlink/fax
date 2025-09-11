@@ -15,3 +15,5 @@ logs
 # data
 data
 
+# dotenv
+.env
