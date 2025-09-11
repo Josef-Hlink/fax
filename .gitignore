@@ -17,3 +17,6 @@ data
 
 # dotenv
 .env
+
+# wandb
+wandb

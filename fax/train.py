@@ -25,6 +25,7 @@ from fax.model import Model
 from fax.paths import LOG_DIR
 from fax.processing.preprocessor import Preprocessor
 from fax.utils import setup_logger
+from fax.writer import WandbConfig, Writer
 
 
 def main(config: Config):
@@ -37,6 +38,10 @@ def main(config: Config):
     model = Model(preprocessor=preprocessor, config=config)
     model = model.to(device)
     logger.debug(f'Model: {sum(p.numel() for p in model.parameters()):,} total parameters')
+
+    wandb_config = WandbConfig.create(train_config=config)
+    global writer
+    writer = Writer(wandb_config) if wandb_config else None
 
     train_loader, val_loader = get_dataloaders(config)
 
@@ -54,6 +59,7 @@ def main(config: Config):
     for epoch in range(config.n_epochs):
         tl = train_epoch(model, train_loader, optimizer, scheduler, device, epoch + 1)
         vl = validate(model, val_loader, device)
+        writer.log({'val/loss': vl}, step=None) if writer else None
         logger.info(f'epoch {epoch + 1}: avg. {tl=:.4f}, {vl:.4f}')
 
     logger.info('\nTraining completed!')
@@ -115,6 +121,8 @@ def train_epoch(
         scheduler.step()
         # accumulate and log loss
         total_loss += loss.item()
+        if writer:
+            writer.log({'train/loss': loss.item()}, None, commit=True)
         pbar.set_postfix({'loss': loss.item()})
 
     # average loss

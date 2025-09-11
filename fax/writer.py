@@ -17,11 +17,9 @@ from fax.config import Config
 class WandbConfig:
     project: str
     train_config: Dict[str, Any]
-    tags: List[str]
-    model: torch.nn.Module
 
     @classmethod
-    def create(cls, model: torch.nn.Module, train_config: Config) -> Optional['WandbConfig']:
+    def create(cls, train_config: Config) -> Optional['WandbConfig']:
         if not os.getenv('WANDB_API_KEY'):
             logger.info('W&B run not initiated because WANDB_API_KEY not set.')
             return None
@@ -29,29 +27,16 @@ class WandbConfig:
             logger.info('Debug mode, skipping W&B.')
             return None
 
-        model_name = model.model.__class__.__name__
-        config = {'model_name': model_name, **vars(train_config)}
-        tags = [model_name]
-
-        return cls(project='hal', train_config=config, tags=tags, model=model)
+        return cls(project='fax', train_config=vars(train_config))
 
 
 class Writer:
     def __init__(self, wandb_config: WandbConfig) -> None:
         self.wandb_config = wandb_config
-        wandb.init(
-            project=wandb_config.project,
-            config=wandb_config.train_config,
-            tags=wandb_config.tags,
-        )
-        train_config = wandb_config.train_config
-        log_freq = train_config['report_len'] // (
-            train_config['local_batch_size'] * train_config['n_gpus']
-        )
-        wandb.watch(wandb_config.model, log='all', log_freq=log_freq)
+        wandb.init(project=wandb_config.project, config=wandb_config.train_config, tags=['1', '2'])
 
     def log(
-        self, summary_dict: TensorDict | Dict[str, Any], step: int, commit: bool = True
+        self, summary_dict: TensorDict | Dict[str, Any], step: Optional[int], commit: bool = True
     ) -> None:
         """Add on event to the event file."""
         if isinstance(summary_dict, TensorDict):
