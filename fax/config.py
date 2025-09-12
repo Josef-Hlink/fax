@@ -1,91 +1,133 @@
+import tomllib
+from pathlib import Path
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser, Namespace
 from typing import Any, Dict, Type
 
 import attr
 
-
-@attr.s(auto_attribs=True, frozen=True)
-class Config:
-    data_dir: str = ''
-    debug: bool = False
-    seed: int = 42
-    n_gpus: int = 1
-    n_dataworkers: int = 4
-    batch_size: int = 64
-    n_samples: int = 2**10
-    n_eval_samples: int = 2**8
-    n_epochs: int = 10
-    seq_len: int = 256
-    gamma: float = 0.999
-    emb_dim: int = 256
-    n_layers: int = 4
-    n_heads: int = 8
-    dropout: float = 0.1
-    lr: float = 3e-4
-    b1: float = 0.9
-    b2: float = 0.999
-    wd: float = 1e-2
-    grad_clip_norm: float = 1.0
+# project root; this is <proj>/fax/config.py
+_PROJ = Path(__file__).parent.parent.resolve()
+with open(_PROJ / 'defaults.toml', 'rb') as f:
+    DEFAULTS = tomllib.load(f)
+with open(_PROJ / 'help.toml', 'rb') as f:
+    HELP = tomllib.load(f)
 
 
 @attr.s(auto_attribs=True, frozen=True)
-class Help:
-    data_dir = '[REQUIRED] Path to MDS data directory with train/val/test splits and stats.json'
-    seed = 'Random seed for reproducibility'
-    n_gpus = 'Number of GPUs to use for training [0 for CPU]'
-    n_dataworkers = 'Number of mosaicml data loader workers'
-    debug = 'More verbose logging'
-    batch_size = 'Batch size for training'  # TODO: confirm
-    n_samples = 'Number of training samples to use [-1 for all]'  # TODO: confirm
-    n_eval_samples = 'Number of evaluation samples to use [-1 for all]'  # TODO: impl. -1
-    n_epochs = 'Number of training epochs'
-    seq_len = 'Sequence length (context size) for the model'
-    gamma = 'Discount factor for sequence rewards calculation during preprocessing'
-    emb_dim = 'Model embedding dimension'
-    n_layers = 'Number of transformer layers'
-    n_heads = 'Number of attention heads'
-    dropout = 'Dropout rate for the model'
-    lr = 'Learning rate for the optimizer'
-    b1 = 'Beta1 for AdamW optimizer'
-    b2 = 'Beta2 for AdamW optimizer'
-    wd = 'Weight decay for AdamW optimizer'
-    grad_clip_norm = 'Gradient clipping norm value'
+class PathsCFG:
+    iso: Path
+    exe: Path
+    sql: Path
+    mds: Path
+    runs: Path
+    logs: Path
+    replays: Path
+    dolphin_home: Path
 
 
-def create_parser(cls: Type[Any], parser: ArgumentParser) -> ArgumentParser:
-    help_messages = Help()
-    for field in attr.fields(cls):
-        arg_name = f'--{field.name.replace("_", "-")}'
-        if field.type == bool:
-            parser.add_argument(
-                arg_name, action='store_true', help=getattr(help_messages, field.name, '')
-            )
-            continue
-        parser.add_argument(
-            arg_name,
-            type=field.type,
-            default=field.default if field.default is not attr.NOTHING else None,
-            help=getattr(help_messages, field.name, ''),
-            required=field.type == str and field.default == '',  # only for data_dir
-        )
+@attr.s(auto_attribs=True, frozen=True)
+class BaseCFG:
+    seed: int
+    debug: bool
+    n_gpus: int
 
+
+@attr.s(auto_attribs=True, frozen=True)
+class TrainingCFG:
+    batch_size: int
+    n_epochs: int
+    n_samples: int
+    n_eval_samples: int
+    n_dataworkers: int
+
+
+@attr.s(auto_attribs=True, frozen=True)
+class ModelCFG:
+    n_layers: int
+    n_heads: int
+    seq_len: int
+    emb_dim: int
+    dropout: float
+    gamma: float
+
+
+@attr.s(auto_attribs=True, frozen=True)
+class OptimCFG:
+    lr: float
+    wd: float
+    b1: float
+    b2: float
+
+
+@attr.s(auto_attribs=True, frozen=True)
+class CFG:
+    paths: PathsCFG
+    base: BaseCFG
+    training: TrainingCFG
+    model: ModelCFG
+    optim: OptimCFG
+
+
+def create_parser(argnames: Dict[str, str]) -> ArgumentParser:
+    """Create and add arguments to an ArgumentParser from a dictionary of argument names and help strings.
+
+    Args:
+        argnames: A dictionary where keys are sections (e.g., 'paths', 'base')
+            and values are space-separated argument names (e.g., 'data-dir batch-size').
+    Returns: The updated ArgumentParser.
+    """
+    parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
+    for section, names in argnames.items():
+        for name in names.split():
+            arg_name = f'--{name}'
+            help_msg = HELP.get(section, {}).get(name, '')
+            default = DEFAULTS.get(section, {}).get(name, None)
+
+            if section == 'PATHS':
+                default = Path(default).expanduser().resolve()
+            if isinstance(default, bool):
+                parser.add_argument(arg_name, action='store_true', help=help_msg)
+            else:
+                parser.add_argument(
+                    arg_name,
+                    type=type(default) if default is not None else str,
+                    default=default,
+                    help=help_msg,
+                )
     return parser
 
 
-def parse_args(cls: Type[Any], args: Namespace) -> Config:
-    kwargs: Dict[str, Any] = {}
-    for field in attr.fields(cls):
-        value = getattr(args, field.name, field.default)
-        kwargs[field.name] = value
-    return cls(**kwargs)
+def parse_args(args: Namespace) -> CFG:
+    cli_dict = vars(args)
+
+    def build(section: str, cls: type):
+        values = {}
+        for field in attr.fields(cls):
+            key_toml = field.name.replace('_', '-')  # default mapping
+            cli_key = field.name
+            if cli_key in cli_dict and cli_dict[cli_key] is not None:
+                val = cli_dict[cli_key]
+            else:
+                val = DEFAULTS.get(section, {}).get(key_toml)
+            # cast to field type
+            if field.type is Path:
+                val = Path(val).expanduser().resolve()
+            elif field.type is not None:
+                val = field.type(val)
+            values[field.name] = val
+        return cls(**values)
+
+    return CFG(
+        paths=build('PATHS', PathsCFG),
+        base=build('BASE', BaseCFG),
+        training=build('TRAINING', TrainingCFG),
+        model=build('MODEL', ModelCFG),
+        optim=build('OPTIM', OptimCFG),
+    )
 
 
 if __name__ == '__main__':
-    parser = ArgumentParser(
-        description='FAX Training Configuration', formatter_class=ArgumentDefaultsHelpFormatter
-    )
-    parser = create_parser(Config, parser)
-    config = parse_args(Config, parser.parse_args())
-
-    for k, v in config.__dict__.items():
-        print(f'{k}: {v}')
+    parser = create_parser({'PATHS': 'iso exe logs', 'BASE': 'debug', 'OPTIM': 'lr wd'})
+    args = parser.parse_args()
+    config = parse_args(args)
+    print(config)
