@@ -1,5 +1,8 @@
-[paths]
-ISO = "~/Data/fax/Super Smash Bros. Melee (USA) (En,Ja) (v1.02).iso"
-EXE = "~/Data/fax/Slippi_Online-x86_64-ExiAI.AppImage"
-DOLPHIN_HOME = "~/.config/SlippiPlayback/"
-REPLAY_OUTPUT = "~/Data/fax/replays/"
+[PATHS]
+iso = "~/Data/fax/Super Smash Bros. Melee (USA) (En,Ja) (v1.02).iso"
+exe = "~/Data/fax/Slippi_Online-x86_64-ExiAI.AppImage"
+sql = "~/Data/fax/index.db"
+mds = "~/Data/fax/mds/"
+runs = "~/Data/fax/runs/"
+replays = "~/Data/fax/replays/"
+dolphin-home = "~/.config/SlippiPlayback/"
