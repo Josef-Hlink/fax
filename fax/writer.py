@@ -1,64 +1,61 @@
-# -*- coding: utf-8 -*-
+from randomname import get_name
 
-import os
-from types import TracebackType
-from typing import Any, Dict, List, Optional, Type
-
-import attr
 import wandb
-import torch
-from loguru import logger
-from tensordict import TensorDict
-
 from fax.config import Config
 
 
-@attr.s(auto_attribs=True, slots=True)
-class WandbConfig:
-    project: str
-    train_config: Dict[str, Any]
+class WandbWriter:
+    """Logging results to Weight and Biases.
 
-    @classmethod
-    def create(cls, train_config: Config) -> Optional['WandbConfig']:
-        if not os.getenv('WANDB_API_KEY'):
-            logger.info('W&B run not initiated because WANDB_API_KEY not set.')
-            return None
-        if train_config.debug:
-            logger.info('Debug mode, skipping W&B.')
-            return None
+    ### Args:
+    `Config` cfg: full configuration of the experiment.
+    """
 
-        return cls(project='fax', train_config=vars(train_config))
+    def __init__(self, cfg: Config) -> None:
+        self.run = wandb.init(name=get_name(), config=cfg.to_dict(), reinit=True)
+        return
+
+    def log(self, data, step, commit=False) -> None:
+        """Log results to wandb."""
+        self.run.log(data, step=step, commit=commit)
+        return
+
+    def log_config(self, config: dict) -> None:
+        """Log configuration to wandb."""
+        self.run.config.update(config)
+        return
+
+    def update_summary(self, data: dict) -> None:
+        """Log summary to wandb."""
+        self.run.summary.update(data)
+        return
+
+    def finish(self) -> None:
+        """Finish wandb run."""
+        # push any remaining data to wandb by comitting an empty log
+        self.run.log({}, commit=True)
+        self.run.finish()
+        return
 
 
-class Writer:
-    def __init__(self, wandb_config: WandbConfig) -> None:
-        self.wandb_config = wandb_config
-        wandb.init(project=wandb_config.project, config=wandb_config.train_config, tags=['1', '2'])
+class DummyLogger:
+    """Dummy logger that does nothing."""
 
-    def log(
-        self, summary_dict: TensorDict | Dict[str, Any], step: Optional[int], commit: bool = True
-    ) -> None:
-        """Add on event to the event file."""
-        if isinstance(summary_dict, TensorDict):
-            summary_dict = {
-                k: v.item() if torch.is_tensor(v) else v for k, v in summary_dict.items()
-            }
-        wandb.log(summary_dict, step=step, commit=commit)
+    def __init__(self, cfg: Config) -> None:
+        _ = cfg
+        return
 
-    def close(self) -> None:
-        wandb.finish()
+    def log(self, data, step, commit=False) -> None:
+        _, _, _ = data, step, commit
+        return
 
-    def __enter__(self):
-        return self
+    def log_config(self, config: dict) -> None:
+        _ = config
+        return
 
-    def __exit__(
-        self,
-        exc_type: Optional[Type[BaseException]],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[TracebackType],
-    ) -> None:
-        self.close()
+    def update_summary(self, data: dict) -> None:
+        _ = data
+        return
 
-    @classmethod
-    def create(cls, wandb_config: WandbConfig) -> 'Writer':
-        return cls(wandb_config)
+    def finish(self) -> None:
+        return

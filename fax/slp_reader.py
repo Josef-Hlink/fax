@@ -16,8 +16,9 @@ import pyarrow as pa
 from loguru import logger
 from peppi_py import Game, read_slippi
 
+from fax.config import debug_enabled
 from fax.constants import CHARACTER_ID_TO_NAME, STAGE_ID_TO_NAME
-from fax.utils import debug_enabled, timed
+from fax.utils import timed
 
 
 @attr.s(auto_attribs=True, slots=True)
@@ -33,6 +34,8 @@ class ReplayRecord:
     # stocks left at end of game, None if not parsed
     p1stocks: Optional[int] = None
     p2stocks: Optional[int] = None
+    # replay length in frames, None if not parsed
+    n_frames: Optional[int] = None
     # netplay ranks
     p1rank: Optional[str] = None
     p2rank: Optional[str] = None
@@ -41,12 +44,12 @@ class ReplayRecord:
 @timed
 def parse_replay(
     slp_path: Path,
-    parse_stocks: bool = False,
+    parse_full: bool = False,
     parse_ranks: bool = False,
 ) -> ReplayRecord:
     """Read contents of a .slp file and return a ReplayRecord."""
 
-    skip_frames = not parse_stocks  # only need frames if parsing stocks
+    skip_frames = not parse_full  # only need frames if parsing full replay
     game: Game = read_slippi(slp_path.as_posix(), skip_frames=skip_frames)
 
     assert game.end.players is not None, 'game not ended properly'
@@ -61,11 +64,12 @@ def parse_replay(
     if game.start.players[1].type.name == 'CPU':
         record.cpu_lvl = game.start.players[1].type.value
 
-    if parse_stocks:
+    if parse_full:
         assert game.frames is not None, 'frames not parsed'
         assert len(game.frames.ports) == 2, 'not a 1v1 game'
         record.p1stocks = as_int(game.frames.ports[0].leader.post.stocks[-1])
         record.p2stocks = as_int(game.frames.ports[1].leader.post.stocks[-1])
+        record.n_frames = len(game.frames.ports[0].leader.post.stocks)
 
     if parse_ranks:
         assert game.start.players[0].netplay is not None, 'not a netplay replay'
@@ -105,7 +109,7 @@ if __name__ == '__main__':
 
     parser = ArgumentParser(description='Parse a .slp replay file.')
     parser.add_argument('slp_path', type=Path, help='Path to the .slp file to parse.')
-    parser.add_argument('-s', '--stocks', action='store_true')
+    parser.add_argument('-f', '--full', action='store_true')
     parser.add_argument('-r', '--ranks', action='store_true')
     parser.add_argument('-D', '--debug', action='store_true')
     args = parser.parse_args()
@@ -115,5 +119,14 @@ if __name__ == '__main__':
     logger.add(sys.stderr, level='DEBUG' if args.debug else 'INFO')
     logger.debug('Debug mode enabled')
 
-    _ = parse_replay(args.slp_path, args.stocks, args.ranks)
+    record = parse_replay(args.slp_path, args.full, args.ranks)
+    for field in attr.fields(ReplayRecord):
+        key = field.name
+        value = getattr(record, key)
+        if key == 'stage':
+            logger.info(f'{key}: {STAGE_ID_TO_NAME.get(value, "UNKNOWN")} ({value})')
+        elif key in ('p1char', 'p2char'):
+            logger.info(f'{key}: {CHARACTER_ID_TO_NAME.get(value, "UNKNOWN")} ({value})')
+        else:
+            logger.info(f'{key}: {value}')
     logger.info('completed parsing replay with no errors')

@@ -22,7 +22,7 @@ from tqdm import tqdm
 from fax.config import Config, create_parser, parse_args
 from fax.dataloader import get_dataloaders
 from fax.model import Model
-from fax.paths import _DATA, LOG_DIR
+from fax.paths import RUNS, LOG_DIR
 from fax.processing.preprocessor import Preprocessor
 from fax.utils import setup_logger
 from fax.writer import WandbConfig, Writer

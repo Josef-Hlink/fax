@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 """
@@ -42,7 +41,8 @@ class DataBase:
                 p1rank TEXT NOT NULL,
                 p2rank TEXT NOT NULL,
                 p1stocks INTEGER NOT NULL,
-                p2stocks INTEGER NOT NULL
+                p2stocks INTEGER NOT NULL,
+                n_frames INTEGER NOT NULL
             )
         """)
         self.conn.commit()
@@ -77,6 +77,7 @@ class DataBase:
             'p2rank',
             'p1stocks',
             'p2stocks',
+            'n_frames',
         )
         self.cursor.execute(
             f"""
@@ -127,9 +128,21 @@ class DataBase:
         """)
         return [row[0] for row in self.cursor.fetchall()]
 
-    def get_faulty_replays(self) -> List[str]:
-        """Return a list of all .slp unfit for training."""
-        return self.get_corrupted_replays() + self.get_unfinished_replays()
+    def get_short_replays(self, min_frames: int) -> List[str]:
+        """Files that parsed but were shorter than min_frames.
+        Args:
+            min_frames: Minimum number of frames for a replay to be considered valid.
+        Returns:
+            List of file names with fewer than min_frames.
+        """
+        self.cursor.execute(
+            """
+            SELECT file_name FROM ranked_replays
+            WHERE n_frames < ?
+        """,
+            (min_frames,),
+        )
+        return [row[0] for row in self.cursor.fetchall()]
 
     def query_character(self, char: int | str) -> List[str]:
         """Query the database for replays involving a specific character (as either player).
@@ -174,39 +187,3 @@ class DataBase:
     def close(self) -> None:
         """Close the database connection."""
         self.conn.close()
-
-
-if __name__ == '__main__':
-    from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
-
-    from fax.paths import DEFAULT_DB_PATH, LOG_DIR
-    from fax.utils import setup_logger
-
-    parser = ArgumentParser(
-        description='Example usage of the DataBase class linked to an existing SQLite database.',
-        formatter_class=ArgumentDefaultsHelpFormatter,
-    )
-    parser.add_argument(
-        '--db_path',
-        type=Path,
-        default=DEFAULT_DB_PATH,
-        help='Path to the SQLite database file. Defaults to <project_root>/data/index.db',
-    )
-    parser.add_argument('-D', '--debug', action='store_true', help='Enable debug mode.')
-    args = parser.parse_args()
-
-    setup_logger(LOG_DIR / 'database.log', debug=args.debug)
-
-    db = DataBase(args.db_path)
-    logger.info(
-        f'Database has {db.n_replays} replays,'
-        + f' {len(db.get_unfinished_replays())} of which are unfinished'
-    )
-    logger.info(f'Database has info on {db.n_errors} parse errors in the database')
-    fox_games = db.query_character('fox')
-    logger.info(f'Found {len(fox_games)} games with fox in the database')
-    spacies = db.query_matchup('fox', 'falco')
-    logger.info(f'Found {len(spacies)} spacies games in the database')
-    fox_dittos = db.query_matchup('fox', 'fox')
-    logger.info(f'Found {len(fox_dittos)} fox dittos in the database')
-    db.close()

@@ -189,12 +189,12 @@ def skew(QEr: torch.Tensor) -> torch.Tensor:
 class _CausalSelfAttentionRelativePosition(nn.Module):
     """Self-attention with Shaw-style relative position encodings, causal mask."""
 
-    def __init__(self, config: Config, input_size: int | None = None) -> None:
+    def __init__(self, config: Config) -> None:
         super().__init__()
         assert config.emb_dim % config.n_heads == 0
         self.config = config
         self.block_size = config.seq_len
-        self.n_embd = input_size or config.emb_dim
+        self.n_embd = config.emb_dim
         self.n_heads = config.n_heads
         self.hs = self.n_embd // config.n_heads
         self.dropout = config.dropout

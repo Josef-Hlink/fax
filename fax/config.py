@@ -1,9 +1,12 @@
+import sys
 import tomllib
 from pathlib import Path
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser, Namespace
-from typing import Any, Dict, Type
+from typing import Dict, Type
 
 import attr
+from loguru import logger
+
 
 # project root; this is <proj>/fax/config.py
 _PROJ = Path(__file__).parent.parent.resolve()
@@ -17,6 +20,7 @@ with open(_PROJ / 'help.toml', 'rb') as f:
 class PathsCFG:
     iso: Path
     exe: Path
+    slp: Path
     sql: Path
     mds: Path
     runs: Path
@@ -97,18 +101,24 @@ def create_parser(argnames: Dict[str, str]) -> ArgumentParser:
     return parser
 
 
-def parse_args(args: Namespace) -> CFG:
+def parse_args(args: Namespace, caller: str) -> CFG:
+    """Parse command-line arguments and merge them with defaults from the TOML file.
+    Args:
+        args: Parsed command-line arguments.
+        caller: Name of the calling script (just pass __file__).
+    Returns: The complete configuration as a CFG object.
+    """
     cli_dict = vars(args)
 
-    def build(section: str, cls: type):
+    def build(section: str, cls: Type):
         values = {}
         for field in attr.fields(cls):
-            key_toml = field.name.replace('_', '-')  # default mapping
+            toml_key = field.name.replace('_', '-')  # default mapping
             cli_key = field.name
             if cli_key in cli_dict and cli_dict[cli_key] is not None:
                 val = cli_dict[cli_key]
             else:
-                val = DEFAULTS.get(section, {}).get(key_toml)
+                val = DEFAULTS.get(section, {}).get(toml_key)
             # cast to field type
             if field.type is Path:
                 val = Path(val).expanduser().resolve()
@@ -117,17 +127,59 @@ def parse_args(args: Namespace) -> CFG:
             values[field.name] = val
         return cls(**values)
 
-    return CFG(
+    cfg = CFG(
         paths=build('PATHS', PathsCFG),
         base=build('BASE', BaseCFG),
         training=build('TRAINING', TrainingCFG),
         model=build('MODEL', ModelCFG),
         optim=build('OPTIM', OptimCFG),
     )
+    setup_logger(cfg.paths.logs / Path(caller).stem, debug=cfg.base.debug)
+    for section_name, section in cfg.__dict__.items():
+        for key, value in section.__dict__.items():
+            logger.debug(f'Config {section_name}.{key} = {value}')
+    return cfg
+
+
+_DEBUG_ENABLED = False
+
+
+def setup_logger(path: Path, debug: bool = False, suppress_stderr: bool = False) -> None:
+    """Set up the logger to log to a file and optionally to stderr.
+    Args:
+        path: Path to the log file.
+        debug: If True, set log level to DEBUG, else INFO.
+        suppress_stderr: If True, do not log to stderr.
+    """
+    global _DEBUG_ENABLED
+    _DEBUG_ENABLED = debug
+    logger.remove()  # remove default logger
+    logger.add(path, level='TRACE', enqueue=True)  # always log to file
+    if suppress_stderr:
+        return
+    logger.add(sys.stderr, level='DEBUG' if debug else 'INFO')
+    logger.debug('Debug to stderr enabled')
+    return
+
+
+def debug_enabled() -> bool:
+    return _DEBUG_ENABLED
 
 
 if __name__ == '__main__':
-    parser = create_parser({'PATHS': 'iso exe logs', 'BASE': 'debug', 'OPTIM': 'lr wd'})
+    exposed_args = {
+        'PATHS': 'iso exe logs',
+        'BASE': 'debug n-gpus',
+        'TRAINING': 'batch-size n-epochs n-samples n-eval-samples n-dataworkers',
+        'MODEL': 'n-layers n-heads seq-len emb-dim dropout gamma',
+        'OPTIM': 'lr wd b1 b2',
+    }
+    parser = create_parser(exposed_args)
     args = parser.parse_args()
-    config = parse_args(args)
-    print(config)
+    config = parse_args(args, caller=__file__)
+    for section_name, section in exposed_args.items():
+        print(f'[{section_name}]')
+        sec = getattr(config, section_name.lower())
+        for key in section.split():
+            print(f'{key}: {getattr(sec, key.replace("-", "_"))}')
+        print()

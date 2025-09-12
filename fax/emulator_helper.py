@@ -50,7 +50,7 @@ def find_open_udp_ports(n: int, min_port=1024, max_port=65535) -> list[int]:
 
 def get_replay_dir(artifact_dir: Path | None = None, step: int | None = None) -> Path:
     if artifact_dir is None:
-        replay_dir = Path(REPLAYS)
+        replay_dir = REPLAYS
     else:
         replay_dir = artifact_dir / 'replays'
         step = step or find_latest_idx(artifact_dir)

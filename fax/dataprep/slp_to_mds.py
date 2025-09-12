@@ -2,15 +2,18 @@
 # -*- coding: utf-8 -*-
 
 """
-This script converts a directory of .slp files into an MDS dataset.
+This script converts a directory of .slp files into 3 MDS datasets:
+  - fox dittos
+  - one-fox games (split into train/val)
+  - no-fox games (split into train/val)
 """
 
+import sys
 import hashlib
 import multiprocessing as mp
 import random
 import struct
 from collections import defaultdict
-from itertools import islice
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -20,27 +23,36 @@ from loguru import logger
 from streaming import MDSWriter
 from tqdm import tqdm
 
+from fax.config import create_parser, parse_args
 from fax.constants import NP_MASK_VALUE
-from fax.database import DataBase
+from fax.dataprep.database import DataBase
 from fax.gamestate_utils import FrameData, extract_and_append_gamestate_inplace
 from fax.schema import MDS_DTYPE_STR_BY_COLUMN, NP_TYPE_BY_COLUMN
-from fax.slp_reader import parse_replay
-from fax.utils import debug_enabled
 
 
-def main(slp_dir: Path, db_path: Path, mds_dir: Path, n: int, w: int) -> None:
-    # initialize tables
-    db = setup_database(db_path)
-    # parse and index .slp files
-    parse_and_store(slp_dir, db, n)
+def slp_to_mds(slp_dir: Path, db_path: Path, mds_dir: Path, seq_len: int) -> None:
+    """Convert a directory of .slp files into an MDS dataset.
+    Args:
+        slp_dir: Directory containing .slp files to convert.
+        db_path: Path to the SQLite database file where the .slp files are indexed.
+        mds_dir: Directory where the MDS datasets will be created.
+        seq_len: Minimum sequence length (in frames) for a replay to be included.
+    """
+
+    db = DataBase(db_path)
     # remove faulty replays from disk
-    remove_faulty_replays(slp_dir, db.get_faulty_replays())
+    faulty_replays = (
+        db.get_corrupted_replays()
+        + db.get_unfinished_replays()
+        + db.get_short_replays(min_frames=seq_len)
+    )
+    remove_faulty_replays(slp_dir, faulty_replays)
     # split files into fox dittos, one-fox, and no-fox datasets
     twofox, onefox, nofox = split_on_fox(slp_dir, db)
     # first write the dittos (they don't need to be split in train/val)
     twofox_files = [slp_dir / f for f in twofox]
     random.shuffle(twofox_files)
-    process_replays(twofox_files, mds_dir / 'twofox', n_workers=w)
+    process_replays(twofox_files, mds_dir / 'twofox')
     # then write the one-fox and no-fox datasets (they get split in train/val)
     for datasetname, filenames in [('onefox', onefox), ('nofox', nofox)]:
         files = list(slp_dir / f for f in filenames)
@@ -49,54 +61,7 @@ def main(slp_dir: Path, db_path: Path, mds_dir: Path, n: int, w: int) -> None:
         for split, data in splits.items():
             split_output_dir = mds_dir / datasetname / split
             split_output_dir.mkdir(parents=True, exist_ok=True)
-            process_replays(data, split_output_dir, n_workers=w)
-    return
-
-
-def setup_database(db_path: Path) -> DataBase:
-    db = DataBase(db_path)
-    db.create_replays_table()
-    db.create_errors_table()
-    logger.info(f'Created database at {db_path}')
-    return db
-
-
-def parse_and_store(slp_dir: Path, db: DataBase, n: int) -> None:
-    """Parse .slp files in the given directory and index them into an SQLite database.
-    Args:
-        slp_dir: Directory containing .slp files to index.
-        db: DataBase instance to use for storing records.
-        n: Number of files to process. Default is -1 (process all files).
-    """
-
-    logger.info(f'Indexing .slp files in {slp_dir}...')
-
-    # create iterator over .slp files
-    iterator = slp_dir.rglob('*.slp')
-    if n > 0:
-        total = min(n, sum(1 for _ in slp_dir.rglob('*.slp')))
-        iterator = islice(iterator, n)
-    elif n == -1:
-        total = sum(1 for _ in slp_dir.rglob('*.slp'))
-        iterator = slp_dir.rglob('*.slp')
-    else:
-        raise ValueError('n must be -1 (process all files) or a positive integer')
-
-    # if not in debug mode, wrap iterator in tqdm for sleeker UI
-    if not debug_enabled():
-        iterator = tqdm(iterator, desc=f'Indexing .slp files in {slp_dir}', total=total)
-
-    # actually parse and store each file
-    for slp_path in iterator:
-        try:
-            db.insert_replay(parse_replay(slp_path, parse_ranks=True, parse_stocks=True))
-        except Exception as e:
-            db.insert_error(str(slp_path.name), str(e))
-
-    logger.info(f'Finished indexing .slp files into {db.db_path}')
-    logger.info(f'{db.n_replays} replays successfully indexed')
-    logger.info(f'{db.n_errors} files failed to parse')
-
+            process_replays(data, split_output_dir)
     return
 
 
@@ -169,7 +134,7 @@ def process_replay(replay_path: Path) -> Optional[Dict[str, Any]]:
     replay_uuid = hash_to_int32(str(replay_path))
 
     try:
-        # Double step on first frame to match next controller state to current gamestate
+        # double step on first frame to match next controller state to current gamestate
         curr_gamestate = console.step()
         while curr_gamestate is not None:
             next_gamestate = console.step()
@@ -201,7 +166,7 @@ def process_replay(replay_path: Path) -> Optional[Dict[str, Any]]:
     return sample
 
 
-def process_replays(replay_paths: list[Path], mds_dir: Path, n_workers: int) -> None:
+def process_replays(replay_paths: list[Path], mds_dir: Path) -> None:
     """Process a list of replay files into an MDS dataset.
     Args:
         replay_paths: List of paths to .slp replay files.
@@ -209,6 +174,7 @@ def process_replays(replay_paths: list[Path], mds_dir: Path, n_workers: int) -> 
         n_workers: Number of MP worker processes to use for processing replays.
     """
 
+    n_workers = max(1, mp.cpu_count() - 4)  # leave some cores free
     logger.info(f'Processing {len(replay_paths)} replays into MDS dataset at {mds_dir}...')
 
     processed = 0
@@ -234,75 +200,26 @@ def process_replays(replay_paths: list[Path], mds_dir: Path, n_workers: int) -> 
 
 
 if __name__ == '__main__':
-    import sys
-    from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
-
-    from fax.paths import DEFAULT_DB_PATH, DEFAULT_MDS_DIR, LOG_DIR
-    from fax.utils import setup_logger
-
-    parser = ArgumentParser(
-        description='Index a directory of .slp files into an SQLite database.',
-        formatter_class=ArgumentDefaultsHelpFormatter,
-    )
-    parser.add_argument(
-        'slp_dir',
-        type=Path,
-        help='Directory containing .slp files to index.',
-    )
-    parser.add_argument(
-        '--db_path',
-        type=Path,
-        default=DEFAULT_DB_PATH,
-        help='Path where the SQLite database will be created. '
-        + 'Defaults to <project_root>/data/index.db.',
-    )
-    parser.add_argument(
-        '--mds_dir',
-        type=Path,
-        default=DEFAULT_MDS_DIR,
-        help='Directory where the MDS dataset will be created. '
-        + 'Defaults to <project_root>/data/mds.',
-    )
-    parser.add_argument(
-        '-n',
-        type=int,
-        default=-1,
-        help='Number of files to process. Default is -1 (process all files).',
-    )
-    parser.add_argument(
-        '-w',
-        type=int,
-        default=max(1, mp.cpu_count() - 1),
-        help='Number of MP workers processes to use for processing replays. '
-        + 'Defaults to number of CPU cores minus one.',
-    )
-    parser.add_argument(
-        '--seed',
-        type=int,
-        default=42,
-        help='Random seed for shuffling replays before processing.',
-    )
-    parser.add_argument('-D', '--debug', action='store_true', help='Enable debug mode.')
-    args = parser.parse_args()
+    exposed_args = {'PATHS': 'slp sql mds', 'BASE': 'seed', 'MODEL': 'seq-len'}
+    parser = create_parser(exposed_args)
+    cfg = parse_args(parser.parse_args(), __file__)
 
     # resolve paths
-    slp_dir = args.slp_dir.expanduser().resolve()
+    slp_dir = cfg.paths.slp.expanduser().resolve()
     assert slp_dir.is_dir(), f'{slp_dir} is not a directory'
     assert any(slp_dir.rglob('*.slp')), f'No .slp files found in {slp_dir}'
 
-    db_path = args.db_path.expanduser().resolve()
+    db_path = cfg.paths.sql.expanduser().resolve()
     if db_path.exists():
         logger.error(f'{db_path} already exists; please delete it first')
         sys.exit(1)
 
-    mds_dir = args.mds_dir.expanduser().resolve()
+    mds_dir = cfg.paths.mds.expanduser().resolve()
     if mds_dir.exists() and any(mds_dir.iterdir()):
         logger.error(f'{mds_dir} already exists and has contents; please delete it first')
         sys.exit(1)
     mds_dir.mkdir(parents=True, exist_ok=True)
 
-    random.seed(args.seed)
+    random.seed(cfg.base.seed)
 
-    setup_logger(LOG_DIR / 'slp_to_mds.log', args.debug)
-
-    main(slp_dir, db_path, mds_dir, args.n, args.w)
+    slp_to_mds(slp_dir, db_path, mds_dir, cfg.model.seq_len)

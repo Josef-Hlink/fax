@@ -1,6 +1,7 @@
 [PATHS]
 iso = "~/Data/fax/Super Smash Bros. Melee (USA) (En,Ja) (v1.02).iso"
 exe = "~/Data/fax/Slippi_Online-x86_64-ExiAI.AppImage"
+slp = "~/Data/fax/ranked-anonymized/"
 sql = "~/Data/fax/index.db"
 mds = "~/Data/fax/mds/"
 runs = "~/Data/fax/runs/"
