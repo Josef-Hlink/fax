@@ -33,6 +33,7 @@ class PathsCFG:
 class BaseCFG:
     seed: int
     debug: bool
+    wandb: bool
     n_gpus: int
 
 
@@ -70,6 +71,16 @@ class CFG:
     training: TrainingCFG
     model: ModelCFG
     optim: OptimCFG
+
+    def to_dict(self) -> dict:
+        """Convert the CFG dataclass to a dictionary."""
+        return {
+            'paths': attr.asdict(self.paths),
+            'base': attr.asdict(self.base),
+            'training': attr.asdict(self.training),
+            'model': attr.asdict(self.model),
+            'optim': attr.asdict(self.optim),
+        }
 
 
 def create_parser(argnames: Dict[str, str]) -> ArgumentParser:

@@ -1,7 +1,10 @@
-from randomname import get_name
+# -*- coding: utf-8 -*-
+
+from typing import Dict
 
 import wandb
-from fax.config import Config
+
+from fax.config import CFG
 
 
 class WandbWriter:
@@ -11,8 +14,8 @@ class WandbWriter:
     `Config` cfg: full configuration of the experiment.
     """
 
-    def __init__(self, cfg: Config) -> None:
-        self.run = wandb.init(name=get_name(), config=cfg.to_dict(), reinit=True)
+    def __init__(self, cfg: CFG, run_name: str) -> None:
+        self.run = wandb.init(name=run_name, config=cfg.to_dict())
         return
 
     def log(self, data, step, commit=False) -> None:
@@ -20,12 +23,7 @@ class WandbWriter:
         self.run.log(data, step=step, commit=commit)
         return
 
-    def log_config(self, config: dict) -> None:
-        """Log configuration to wandb."""
-        self.run.config.update(config)
-        return
-
-    def update_summary(self, data: dict) -> None:
+    def update_summary(self, data: Dict) -> None:
         """Log summary to wandb."""
         self.run.summary.update(data)
         return
@@ -38,22 +36,18 @@ class WandbWriter:
         return
 
 
-class DummyLogger:
-    """Dummy logger that does nothing."""
+class DummyWriter:
+    """Dummy writer that does nothing."""
 
-    def __init__(self, cfg: Config) -> None:
-        _ = cfg
+    def __init__(self, cfg: CFG, run_name: str) -> None:
+        _ = cfg, run_name
         return
 
     def log(self, data, step, commit=False) -> None:
-        _, _, _ = data, step, commit
+        _ = data, step, commit
         return
 
-    def log_config(self, config: dict) -> None:
-        _ = config
-        return
-
-    def update_summary(self, data: dict) -> None:
+    def update_summary(self, data: Dict) -> None:
         _ = data
         return
 

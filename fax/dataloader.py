@@ -9,8 +9,9 @@ from streaming import StreamingDataLoader, StreamingDataset
 from streaming.base.util import clean_stale_shared_memory
 from tensordict import TensorDict
 
-from fax.config import Config
+from fax.config import create_parser, parse_args, CFG
 from fax.constants import Player
+from fax.dataprep.stats import load_dataset_stats
 from fax.processing.preprocessor import Preprocessor, convert_ndarray_to_tensordict
 
 
@@ -32,18 +33,20 @@ class FAXStreamingDataset(StreamingDataset):
     6. Returns training-ready input/target pairs
     """
 
-    def __init__(self, config: Config, split: str = 'train', batch_size: int = 1):
+    def __init__(self, cfg: CFG, split: str = 'train', batch_size: int = 1):
         """Fax streaming dataset constructor."""
 
         super().__init__(
-            local=Path(config.data_dir).expanduser().as_posix(),
+            local=Path(cfg.paths.mds / 'onefox').expanduser().as_posix(),
             split=split,
             shuffle=True,
             batch_size=batch_size,
         )
 
-        self.config = config
-        self.preprocessor = Preprocessor(config)
+        self.cfg = cfg
+        self.preprocessor = Preprocessor(
+            cfg, load_dataset_stats(cfg.paths.mds / 'onefox')
+        )  # TODO: parameterize dataset name
         self.is_train = split == 'train'  # for reproducible sampling during validation
 
     def __getitem__(self, idx: Any) -> TensorDict:
@@ -52,11 +55,6 @@ class FAXStreamingDataset(StreamingDataset):
 
         # Convert numpy arrays to TensorDict
         episode_td = convert_ndarray_to_tensordict(episode_data)
-
-        # Skip episodes that are too short
-        if episode_td.shape[0] < self.preprocessor.trajectory_sampling_len:
-            # Return a different episode by recursively calling with a new index
-            return self.__getitem__((idx + 1) % len(self))
 
         # Sample a subsequence for training
         sample_td = self.preprocessor.sample_from_episode(episode_td, debug=not self.is_train)
@@ -80,30 +78,30 @@ class FAXStreamingDataset(StreamingDataset):
         return TensorDict(payload, batch_size=())
 
 
-def get_dataloaders(config: Config) -> Tuple[StreamingDataLoader, StreamingDataLoader]:
+def get_dataloaders(cfg: CFG) -> Tuple[StreamingDataLoader, StreamingDataLoader]:
     """
     Create train and validation dataloaders.
 
     Args:
-        config: Training configuration containing data directory and batch size
+        cfg: Training configuration containing data directory and batch size
 
     Returns:
         Tuple of (train_loader, val_loader)
     """
-    batch_size = config.batch_size
+    batch_size = cfg.training.batch_size
 
     # Clean stale shared memory
     clean_stale_shared_memory()
 
     # Create datasets
     train_dataset = FAXStreamingDataset(
-        config=config,
+        cfg=cfg,
         split='train',
         batch_size=batch_size,
     )
 
     val_dataset = FAXStreamingDataset(
-        config=config,
+        cfg=cfg,
         split='val',
         batch_size=batch_size,
     )
@@ -113,7 +111,7 @@ def get_dataloaders(config: Config) -> Tuple[StreamingDataLoader, StreamingDataL
         train_dataset,
         batch_size=batch_size,
         collate_fn=collate_tensordicts,
-        num_workers=config.n_dataworkers,
+        num_workers=cfg.training.n_dataworkers,
         pin_memory=True,
         persistent_workers=False,
         prefetch_factor=2,
@@ -123,7 +121,7 @@ def get_dataloaders(config: Config) -> Tuple[StreamingDataLoader, StreamingDataL
         val_dataset,
         batch_size=batch_size,
         collate_fn=collate_tensordicts,
-        num_workers=config.n_dataworkers,
+        num_workers=cfg.training.n_dataworkers,
         pin_memory=True,
         persistent_workers=False,
         prefetch_factor=2,
@@ -146,11 +144,10 @@ def load_dataloader_state(loader: StreamingDataLoader, path: Path) -> None:
 
 
 if __name__ == '__main__':
-    B, L = 4, 32
-    config = Config(data_dir='~/Data/mds/full', batch_size=B, seq_len=L)
-    train_loader, val_loader = get_dataloaders(config=config)
-
-    print(f'Created dataloaders with batch_size={config.batch_size}, seq_len={config.seq_len}')
+    exposed_args = {'PATHS': 'mds', 'TRAINING': 'batch_size', 'MODEL': 'seq_len'}
+    parser = create_parser(exposed_args)
+    cfg = parse_args(parser.parse_args(), __file__)
+    train_loader, val_loader = get_dataloaders(cfg=cfg)
 
     for i, batch in enumerate(train_loader):
         print(f'Batch #{i + 1}:')

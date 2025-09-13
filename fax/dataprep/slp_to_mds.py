@@ -15,7 +15,7 @@ import random
 import struct
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Set
 
 import melee
 import numpy as np
@@ -46,7 +46,7 @@ def slp_to_mds(slp_dir: Path, db_path: Path, mds_dir: Path, seq_len: int) -> Non
         + db.get_unfinished_replays()
         + db.get_short_replays(min_frames=seq_len)
     )
-    remove_faulty_replays(slp_dir, faulty_replays)
+    remove_faulty_replays(slp_dir, set(faulty_replays))
     # split files into fox dittos, one-fox, and no-fox datasets
     twofox, onefox, nofox = split_on_fox(slp_dir, db)
     # first write the dittos (they don't need to be split in train/val)
@@ -65,7 +65,7 @@ def slp_to_mds(slp_dir: Path, db_path: Path, mds_dir: Path, seq_len: int) -> Non
     return
 
 
-def remove_faulty_replays(slp_dir: Path, replays: List[str]) -> None:
+def remove_faulty_replays(slp_dir: Path, replays: Set[str]) -> None:
     """Remove replay files that resulted in parse errors from the directory."""
     if not replays:
         logger.info('No faulty replays to remove')
@@ -200,7 +200,7 @@ def process_replays(replay_paths: list[Path], mds_dir: Path) -> None:
 
 
 if __name__ == '__main__':
-    exposed_args = {'PATHS': 'slp sql mds', 'BASE': 'seed', 'MODEL': 'seq-len'}
+    exposed_args = {'PATHS': 'slp sql mds', 'BASE': 'seed debug', 'MODEL': 'seq-len'}
     parser = create_parser(exposed_args)
     cfg = parse_args(parser.parse_args(), __file__)
 
@@ -210,9 +210,6 @@ if __name__ == '__main__':
     assert any(slp_dir.rglob('*.slp')), f'No .slp files found in {slp_dir}'
 
     db_path = cfg.paths.sql.expanduser().resolve()
-    if db_path.exists():
-        logger.error(f'{db_path} already exists; please delete it first')
-        sys.exit(1)
 
     mds_dir = cfg.paths.mds.expanduser().resolve()
     if mds_dir.exists() and any(mds_dir.iterdir()):

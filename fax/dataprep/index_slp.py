@@ -14,7 +14,7 @@ from tqdm import tqdm
 
 from fax.config import create_parser, debug_enabled, parse_args
 from fax.dataprep.database import DataBase
-from fax.slp_reader import parse_replay
+from fax.dataprep.slp_reader import parse_replay
 
 
 def index_slp(slp_dir: Path, db_path: Path) -> None:

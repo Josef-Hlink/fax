@@ -12,7 +12,7 @@ from typing import List
 from loguru import logger
 
 from fax.constants import CHARACTER_NAME_TO_ID
-from fax.slp_reader import ReplayRecord
+from fax.dataprep.slp_reader import ReplayRecord
 
 
 class DataBase:

@@ -19,6 +19,7 @@ from loguru import logger
 from streaming import Stream, StreamingDataset
 from tqdm import tqdm
 
+from fax.config import create_parser, parse_args
 from fax.constants import NP_MASK_VALUE
 
 
@@ -108,27 +109,18 @@ def calculate_dataset_stats(path: Path) -> None:
 
 
 if __name__ == '__main__':
-    from argparse import ArgumentParser
+    parser = create_parser({'PATH': 'mds', 'BASE': 'debug'})
+    cfg = parse_args(parser.parse_args(), __file__)
 
-    from fax.paths import LOG_DIR
-    from fax.utils import setup_logger
-
-    parser = ArgumentParser()
-    parser.add_argument(
-        'path',
-        type=str,
-        help='Path to the MDS dataset directory. stats.json will be saved in this directory',
-    )
-    parser.add_argument('-D', '--debug', action='store_true', help='Enable debug logging')
-    args = parser.parse_args()
-
-    setup_logger(LOG_DIR / 'stats.log', args.debug)
-
-    calculate_dataset_stats(Path(args.path))
-    dataset_stats = load_dataset_stats(Path(args.path))
-    for feature, stats in dataset_stats.items():
-        logger.debug(f'Stats for feature: {feature}')
-        logger.debug(
-            f'    mean: {stats.mean:.4f}, std: {stats.std:.4f}, '
-            + f'min: {stats.min:.4f}, max: {stats.max:.4f}'
-        )
+    mds_path = cfg.paths.mds
+    assert mds_path.exists(), f'MDS path {mds_path} does not exist'
+    for dataset in ['twofox', 'onefox', 'nofox']:
+        assert (mds_path / dataset).exists(), f'MDS dataset {dataset} does not exist in {mds_path}'
+        calculate_dataset_stats(mds_path / dataset)
+        dataset_stats = load_dataset_stats(mds_path / dataset)
+        for feature, stats in dataset_stats.items():
+            logger.debug(f'Stats for feature: {feature}')
+            logger.debug(
+                f'    mean: {stats.mean:.4f}, std: {stats.std:.4f}, '
+                + f'min: {stats.min:.4f}, max: {stats.max:.4f}'
+            )

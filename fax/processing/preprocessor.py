@@ -1,14 +1,13 @@
 import random
-from pathlib import Path
 from typing import Any, Dict, Set
 
 import numpy as np
 import torch
 from tensordict import TensorDict
 
-from fax.config import Config
-from fax.constants import MELEE_ACTION_ID_TO_INDEX, Player, get_opponent
-from fax.stats import FeatureStats, load_dataset_stats
+from fax.config import CFG
+from fax.constants import Player, get_opponent
+from fax.dataprep.stats import FeatureStats
 
 from .configs import (
     InputConfig,
@@ -35,11 +34,11 @@ class Preprocessor:
     - hidden dim sizes by input embedding head at runtime
     """
 
-    def __init__(self, config: Config) -> None:
-        self.config = config
-        self.stats = load_dataset_stats(Path(config.data_dir))
+    def __init__(self, cfg: CFG, stats: Dict) -> None:
+        self.cfg = cfg
+        self.stats = stats
         self.normalization_fn_by_feature_name: Dict[str, Transformation] = {}  # TODO: check used
-        self.seq_len = config.seq_len
+        self.seq_len = cfg.model.seq_len
 
         self.input_config = get_input_config()
         self.target_config = get_target_config()
@@ -160,7 +159,7 @@ class Preprocessor:
         Exactly matches the per-step logic:
             R[t] = r[t] + gamma * r[t+1] + gamma^2 * r[t+2] + ...
         """
-        gamma = self.config.gamma
+        gamma = self.cfg.model.gamma
         rewards = td[f'{ego}_reward']  # shape: [T] (or possibly more dims)
         T = rewards.shape[0]
         device = rewards.device
@@ -212,24 +211,10 @@ def preprocess_input_features(
 
     Does not slice or shift any features.
     """
-    from fax.constants import MELEE_ACTION_ID_TO_INDEX
 
     opponent = get_opponent(ego)
     transformation_by_feature_name = config.transformation_by_feature_name
     processed_features: Dict[str, torch.Tensor] = {}
-
-    # Convert action IDs to indices before processing
-    for player in (ego, opponent):
-        action_key = f'{player}_action'
-        if action_key in sample_T:
-            raw_actions = sample_T[action_key]
-            # Convert melee action IDs to indices
-            indexed_actions = torch.tensor(
-                [MELEE_ACTION_ID_TO_INDEX.get(action.item(), 0) for action in raw_actions],
-                dtype=torch.int32,
-                device=raw_actions.device,
-            )
-            sample_T[action_key] = indexed_actions
 
     # Process player features
     for player in (ego, opponent):

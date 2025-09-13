@@ -9,76 +9,121 @@ to demonstrate how all components interact.
 """
 
 import random
-from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 
+from randomname import get_name
+from streaming import StreamingDataLoader
+from tensordict import TensorDict
 import torch
 import torch.nn.functional as F
-from loguru import logger
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
-from torch.utils.data import DataLoader
+from loguru import logger
 from tqdm import tqdm
 
-from fax.config import Config, create_parser, parse_args
+from fax.config import create_parser, parse_args, CFG
 from fax.dataloader import get_dataloaders
+from fax.dataprep.stats import load_dataset_stats
 from fax.model import Model
-from fax.paths import RUNS, LOG_DIR
 from fax.processing.preprocessor import Preprocessor
-from fax.utils import setup_logger
-from fax.writer import WandbConfig, Writer
+from fax.writer import DummyWriter, WandbWriter
 
 
-def main(config: Config):
-    """Main training loop."""
+def train(cfg: CFG, dataset_name: str) -> None:
+    logger.info('Starting training...')
 
-    random.seed(config.seed)
-    device = torch.device('cuda' if config.n_gpus > 0 else 'cpu')
+    preprocessor = Preprocessor(cfg, load_dataset_stats(cfg.paths.mds / dataset_name))
+    model = Model(preprocessor, cfg)
+    logger.info(f'Model has {sum(p.numel() for p in model.parameters()):,} parameters.')
 
-    preprocessor = Preprocessor(config)
-    model = Model(preprocessor=preprocessor, config=config)
-    model = model.to(device)
+    # Get dataloaders
+    train_loader, val_loader = get_dataloaders(cfg)
 
-    # load checkpoint
-    model_path = _DATA / 'model_final3.pth'
-    if model_path.exists():
-        model.load_state_dict(torch.load(model_path, map_location=device))
-        logger.info(f'Loaded model from {model_path}')
-    else:
-        logger.info('No checkpoint found, training from scratch.')
+    # Initialize trainer
+    trainer = Trainer(cfg, model)
 
-    logger.debug(f'Model: {sum(p.numel() for p in model.parameters()):,} total parameters')
+    best_val_loss = float('inf')
+    for epoch in range(1, cfg.training.n_epochs + 1):
+        train_loss = trainer.train_epoch(train_loader, epoch)
+        val_loss = trainer.validate(val_loader)
 
-    wandb_config = WandbConfig.create(train_config=config)
-    global writer
-    writer = Writer(wandb_config) if wandb_config else None
+        logger.info(f'Epoch {epoch}: Train Loss = {train_loss:.4f}, Val Loss = {val_loss:.4f}')
+        trainer.writer.log({'val/loss': val_loss}, None, commit=True)
 
-    train_loader, val_loader = get_dataloaders(config)
+        # Save best model
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            torch.save(model.state_dict(), cfg.paths.runs / trainer.run_name / 'best_model.pth')
+            logger.info(f'Saved new best model with Val Loss = {best_val_loss:.4f}')
 
-    # create optimizer and scheduler
-    optimizer = AdamW(
-        model.parameters(), lr=config.lr, weight_decay=config.wd, betas=(config.b1, config.b2)
-    )
-    total_steps = len(train_loader) * config.n_epochs
-    scheduler = CosineAnnealingLR(optimizer, T_max=total_steps)
-
-    logger.info(f'Training for {config.n_epochs} epochs, {len(train_loader)} batches per epoch')
-    logger.info(f'Total training steps: {total_steps}')
-
-    # training loop
-    for epoch in range(config.n_epochs):
-        tl = train_epoch(model, train_loader, optimizer, scheduler, device, epoch + 1)
-        vl = validate(model, val_loader, device)
-        writer.log({'val/loss': vl}, step=None) if writer else None
-        logger.info(f'epoch {epoch + 1}: avg. {tl=:.4f}, {vl:.4f}')
-
-    logger.info('\nTraining completed!')
-
-    # save final model
-    torch.save(model.state_dict(), _DATA / 'model_final3.pth')
-    logger.info(f'Model saved to {_DATA / "model_final3.pth"}')
+    logger.info('Training complete.')
 
 
-def compute_loss(outputs, targets) -> torch.Tensor:
+class Trainer(torch.nn.Module):
+    def __init__(self, cfg: CFG, model: Model):
+        super().__init__()
+        self.cfg = cfg
+        self.model = model
+
+        self.run_name = f'{get_name()}-{random.randint(0, 1000):03d}'
+        if not (cfg.paths.runs / self.run_name).exists():
+            (cfg.paths.runs / self.run_name).mkdir(parents=True, exist_ok=True)
+        logger.info(f'Run name: {self.run_name}')
+        self.writer: WandbWriter | DummyWriter = DummyWriter(cfg, self.run_name)
+        if cfg.base.wandb:
+            self.writer = WandbWriter(cfg, self.run_name)
+        random.seed(cfg.base.seed)
+
+        self.device = torch.device('cuda' if cfg.base.n_gpus > 0 else 'cpu')
+        self.model.to(self.device)
+        self.to(self.device)
+
+        lr, wd, b1, b2 = map(lambda x: getattr(cfg.optim, x), ['lr', 'wd', 'b1', 'b2'])
+        self.optimizer = AdamW(self.model.parameters(), lr=lr, weight_decay=wd, betas=(b1, b2))
+        total_steps = cfg.training.n_epochs * cfg.training.n_samples // cfg.training.batch_size
+        self.scheduler = CosineAnnealingLR(self.optimizer, T_max=total_steps, eta_min=1e-6)
+
+    def train_epoch(self, train_loader: StreamingDataLoader, epoch: int) -> float:
+        self.model.train()
+        total_loss = 0.0
+
+        for sample in (pbar := tqdm(train_loader, desc=f'Training Epoch {epoch}')):
+            inputs = sample['inputs'].to(self.device)
+            targets = sample['targets'].to(self.device)
+
+            self.optimizer.zero_grad()
+            outputs = self.model(inputs)
+            loss = compute_loss(outputs, targets)
+            loss.backward()
+            self.optimizer.step()
+            self.scheduler.step()
+
+            total_loss += loss.item()
+            if self.writer:
+                self.writer.log({'train/loss': loss.item()}, None, commit=True)
+            pbar.set_postfix({'loss': loss.item()})
+
+        return total_loss / len(train_loader)
+
+    def validate(self, val_loader: StreamingDataLoader) -> float:
+        self.model.eval()
+        total_loss = 0.0
+
+        with torch.no_grad():
+            for batch in val_loader:
+                inputs = batch['inputs'].to(self.device)
+                targets = batch['targets'].to(self.device)
+                outputs = self.model(inputs)
+                loss = compute_loss(outputs, targets)
+                total_loss += loss.item()
+
+        return total_loss / len(val_loader)
+
+    @property
+    def log_dir(self):
+        return self.cfg.paths.logs
+
+
+def compute_loss(outputs: TensorDict, targets: TensorDict) -> torch.Tensor:
     """
     Compute loss for each controller head.
 
@@ -107,60 +152,14 @@ def compute_loss(outputs, targets) -> torch.Tensor:
     return torch.stack(list(losses.values())).sum()
 
 
-def train_epoch(
-    model: Model,
-    train_loader: DataLoader,
-    optimizer: AdamW,
-    scheduler: CosineAnnealingLR,
-    device: torch.device,
-    epoch: int,
-) -> float:
-    """Train for one epoch."""
-    model.train()
-    total_loss = 0.0
-
-    for sample in (pbar := tqdm(train_loader, desc=f'Training Epoch {epoch}')):
-        # move to device
-        inputs = sample['inputs'].to(device)
-        targets = sample['targets'].to(device)
-        # forward pass
-        optimizer.zero_grad()
-        outputs = model(inputs)
-        # compute loss
-        loss = compute_loss(outputs, targets)
-        # backward pass
-        loss.backward()
-        optimizer.step()
-        scheduler.step()
-        # accumulate and log loss
-        total_loss += loss.item()
-        if writer:
-            writer.log({'train/loss': loss.item()}, None, commit=True)
-        pbar.set_postfix({'loss': loss.item()})
-
-    # average loss
-    return total_loss / len(train_loader)
-
-
-def validate(model: Model, val_loader: DataLoader, device: torch.device) -> float:
-    """Validate the model."""
-    model.eval()
-    total_loss = 0.0
-
-    with torch.no_grad():
-        for batch in val_loader:
-            inputs = batch['inputs'].to(device)
-            targets = batch['targets'].to(device)
-            outputs = model(inputs)
-            loss = compute_loss(outputs, targets)
-            total_loss += loss.item()
-
-    return total_loss / len(val_loader)
-
-
 if __name__ == '__main__':
-    parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
-    parser = create_parser(Config, parser)
-    config = parse_args(Config, parser.parse_args())
-    setup_logger(LOG_DIR / 'training.log', config.debug)
-    main(config)
+    exposed_args = {
+        'PATHS': 'mds',
+        'BASE': 'seed debug wandb n_gpus',
+        'TRAINING': 'batch_size n_epochs n_samples n_eval_samples n_dataworkers',
+        'MODEL': 'n_layers n_heads seq_len emb_dim dropout gamma',
+        'OPTIM': 'lr wd b1 b2',
+    }
+    parser = create_parser(exposed_args)
+    cfg = parse_args(parser.parse_args(), __file__)
+    train(cfg, 'onefox')  # TODO: parameterize dataset name

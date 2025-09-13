@@ -11,6 +11,7 @@ dolphin-home = "Used for Dolphin Emulator settings and memory cards."  # TODO: u
 [BASE]
 seed = "Random seed that will be set at the start of anything involving stochasticity."
 debug = "If true, will run in debug mode for more verbose logging."
+wandb = "If true, will log training metrics to Weights & Biases."
 n-gpus = "Number of GPUs to use for training. Set to 0 for CPU training."  # TODO: support >1
 [TRAINING]
 batch-size = "Number of samples to be propagated through the network at once during training and evaluation."

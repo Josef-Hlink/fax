@@ -17,7 +17,7 @@ from fax.constants import (
     SHOULDER_CENTERS,
     STICK_CENTERS,
 )
-from fax.stats import FeatureStats
+from fax.dataprep.stats import FeatureStats
 
 # for type hinting
 Transformation = Callable[..., torch.Tensor]

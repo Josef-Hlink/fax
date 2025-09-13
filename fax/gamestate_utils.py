@@ -20,6 +20,7 @@ from fax.constants import (
     MELEE_CHARACTER_IDS,
     MELEE_STAGE_ID_TO_INDEX,
     MELEE_STAGE_IDS,
+    MELEE_ACTION_ID_TO_INDEX,
 )
 
 FrameData = DefaultDict[str, MutableSequence[Any]]
@@ -46,7 +47,7 @@ def extract_player_state(player_state: melee.PlayerState) -> Dict[str, Any]:
         'percent': player_state.percent,
         'shield_strength': player_state.shield_strength,
         'jumps_left': player_state.jumps_left,
-        'action': player_state.action.value,
+        'action': MELEE_ACTION_ID_TO_INDEX[player_state.action.value],
         'action_frame': player_state.action_frame,
         'invulnerability_left': player_state.invulnerability_left,
         'hitlag_left': player_state.hitlag_left,

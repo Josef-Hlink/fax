@@ -11,6 +11,7 @@ dolphin-home = "~/.config/SlippiPlayback/"
 [BASE]
 seed = 42
 debug = false
+wandb = false
 n-gpus = 1
 [TRAINING]
 batch-size = 64
