@@ -188,7 +188,7 @@ def debug_enabled() -> bool:
 
 if __name__ == '__main__':
     exposed_args = {
-        'PATHS': 'iso exe logs',
+        'PATHS': 'iso exe logs dolphin-home',
         'BASE': 'debug n-gpus',
         'TRAINING': 'batch-size n-epochs n-samples n-val-samples n-dataworkers',
         'MODEL': 'n-layers n-heads seq-len emb-dim dropout gamma',

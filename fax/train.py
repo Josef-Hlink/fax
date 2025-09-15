@@ -156,9 +156,9 @@ def compute_loss(outputs: TensorDict, targets: TensorDict) -> torch.Tensor:
 if __name__ == '__main__':
     exposed_args = {
         'PATHS': 'mds',
-        'BASE': 'seed debug wandb n_gpus',
-        'TRAINING': 'batch_size n_epochs n_samples n_val_samples n_dataworkers',
-        'MODEL': 'n_layers n_heads seq_len emb_dim dropout gamma',
+        'BASE': 'seed debug wandb n-gpus',
+        'TRAINING': 'batch-size n-epochs n-samples n-val-samples n-dataworkers',
+        'MODEL': 'n-layers n-heads seq-len emb-dim dropout gamma',
         'OPTIM': 'lr wd b1 b2',
     }
     parser = create_parser(exposed_args)

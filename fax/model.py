@@ -261,8 +261,8 @@ if __name__ == '__main__':
     # simple test with random tensors
     exposed_args = {
         'BASE': 'debug',
-        'MODEL': 'n_layers n_heads seq_len emb_dim dropout gamma',
-        'TRAINING': 'batch_size',
+        'MODEL': 'n-layers n-heads seq-len emb-dim dropout gamma',
+        'TRAINING': 'batch-size',
     }
     parser = create_parser(exposed_args)
     cfg = parse_args(parser.parse_args(), __file__)

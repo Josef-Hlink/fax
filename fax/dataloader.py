@@ -123,7 +123,7 @@ def get_dataloaders(cfg: CFG) -> Tuple[StreamingDataLoader, StreamingDataLoader]
 
 
 if __name__ == '__main__':
-    exposed_args = {'PATHS': 'mds', 'TRAINING': 'batch_size', 'MODEL': 'seq_len'}
+    exposed_args = {'PATHS': 'mds', 'TRAINING': 'batch-size', 'MODEL': 'seq-len'}
     parser = create_parser(exposed_args)
     cfg = parse_args(parser.parse_args(), __file__)
     train_loader, val_loader = get_dataloaders(cfg=cfg)
