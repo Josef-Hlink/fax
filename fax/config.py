@@ -45,6 +45,15 @@ class TrainingCFG:
     n_val_samples: int
     n_dataworkers: int
 
+    def __attrs_post_init__(self):
+        """Validate that batch_size, n_samples, and n_val_samples are powers of 2."""
+        if self.batch_size & (self.batch_size - 1) != 0:
+            raise ValueError(f'batch_size must be a power of 2, got {self.batch_size}')
+        if self.n_samples & (self.n_samples - 1) != 0:
+            raise ValueError(f'n_samples must be a power of 2, got {self.n_samples}')
+        if self.n_val_samples & (self.n_val_samples - 1) != 0:
+            raise ValueError(f'n_val_samples must be a power of 2, got {self.n_val_samples}')
+
 
 @attr.s(auto_attribs=True, frozen=True)
 class ModelCFG:
