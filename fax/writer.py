@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-from typing import Dict
+from typing import Dict, Optional
 
 import wandb
 
@@ -18,7 +18,7 @@ class WandbWriter:
         self.run = wandb.init(name=run_name, config=cfg.to_dict())
         return
 
-    def log(self, data, step, commit=False) -> None:
+    def log(self, data: Dict, step: Optional[int], commit=False) -> None:
         """Log results to wandb."""
         self.run.log(data, step=step, commit=commit)
         return
@@ -43,7 +43,7 @@ class DummyWriter:
         _ = cfg, run_name
         return
 
-    def log(self, data, step, commit=False) -> None:
+    def log(self, data: Dict, step: Optional[int], commit=False) -> None:
         _ = data, step, commit
         return
 
