@@ -47,3 +47,6 @@ extend-select = [
 
 [tool.ruff.format]
 quote-style = "single"
+
+[tool.mypy]
+ignore_missing_imports = true
