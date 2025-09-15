@@ -16,9 +16,9 @@ n-gpus = 1
 [TRAINING]
 batch-size = 64
 n-epochs = 100
-n-samples = 1000
-n-val-samples = 100
-n-dataworkers = 4
+n-samples = 2**17  # 131072
+n-val-samples = 2**12  # 4096
+n-dataworkers = 8
 [MODEL]
 n-layers = 4
 n-heads = 8
