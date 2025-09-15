@@ -85,10 +85,11 @@ class Trainer(torch.nn.Module):
     def train_epoch(self, train_loader: StreamingDataLoader, epoch: int) -> float:
         self.model.train()
         total_loss = 0.0
+        n_epochs = self.cfg.training.n_epochs
 
-        for sample in (pbar := tqdm(train_loader, desc=f'Training Epoch {epoch}')):
-            inputs = sample['inputs'].to(self.device)
-            targets = sample['targets'].to(self.device)
+        for batch in (pbar := tqdm(train_loader, desc=f'epoch {epoch}/{n_epochs}')):
+            inputs = batch['inputs'].to(self.device)
+            targets = batch['targets'].to(self.device)
 
             self.optimizer.zero_grad()
             outputs = self.model(inputs)
@@ -109,7 +110,7 @@ class Trainer(torch.nn.Module):
         total_loss = 0.0
 
         with torch.no_grad():
-            for batch in val_loader:
+            for batch in tqdm(val_loader, desc=f'validating'):
                 inputs = batch['inputs'].to(self.device)
                 targets = batch['targets'].to(self.device)
                 outputs = self.model(inputs)
