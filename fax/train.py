@@ -157,7 +157,7 @@ if __name__ == '__main__':
     exposed_args = {
         'PATHS': 'mds',
         'BASE': 'seed debug wandb n_gpus',
-        'TRAINING': 'batch_size n_epochs n_samples n_eval_samples n_dataworkers',
+        'TRAINING': 'batch_size n_epochs n_samples n_val_samples n_dataworkers',
         'MODEL': 'n_layers n_heads seq_len emb_dim dropout gamma',
         'OPTIM': 'lr wd b1 b2',
     }

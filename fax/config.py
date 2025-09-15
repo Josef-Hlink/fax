@@ -42,7 +42,7 @@ class TrainingCFG:
     batch_size: int
     n_epochs: int
     n_samples: int
-    n_eval_samples: int
+    n_val_samples: int
     n_dataworkers: int
 
 
@@ -181,7 +181,7 @@ if __name__ == '__main__':
     exposed_args = {
         'PATHS': 'iso exe logs',
         'BASE': 'debug n-gpus',
-        'TRAINING': 'batch-size n-epochs n-samples n-eval-samples n-dataworkers',
+        'TRAINING': 'batch-size n-epochs n-samples n-val-samples n-dataworkers',
         'MODEL': 'n-layers n-heads seq-len emb-dim dropout gamma',
         'OPTIM': 'lr wd b1 b2',
     }

@@ -17,7 +17,7 @@ n-gpus = "Number of GPUs to use for training. Set to 0 for CPU training."  # TOD
 batch-size = "Number of samples to be propagated through the network at once during training and evaluation."
 n-epochs = "Number of epochs to train for. Evaluation happens at the end of each epoch."
 n-samples = "Number of training samples to draw from the dataset for each epoch. Can be less than or greater than the number of replays in the dataset."
-n-eval-samples = "Number of samples to use for evaluation at the end of each epoch."
+n-val-samples = "Number of samples to use for validation at the end of each epoch."
 n-dataworkers = "Number of subprocesses MosaicML will use to load data."
 [MODEL]
 n-layers = "Number of transformer layers."
