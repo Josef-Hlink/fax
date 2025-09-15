@@ -36,11 +36,13 @@ class FAXStreamingDataset(StreamingDataset):
     def __init__(self, cfg: CFG, split: str = 'train'):
         """Fax streaming dataset constructor."""
 
+        n_samples = cfg.training.n_samples if split == 'train' else cfg.training.n_eval_samples
         super().__init__(
             local=Path(cfg.paths.mds / 'onefox').expanduser().as_posix(),
             split=split,
             shuffle=True,
             batch_size=cfg.training.batch_size,
+            epoch_size=n_samples,
         )
 
         self.cfg = cfg
