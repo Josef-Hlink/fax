@@ -33,14 +33,14 @@ class FAXStreamingDataset(StreamingDataset):
     6. Returns training-ready input/target pairs
     """
 
-    def __init__(self, cfg: CFG, split: str = 'train', batch_size: int = 1):
+    def __init__(self, cfg: CFG, split: str = 'train'):
         """Fax streaming dataset constructor."""
 
         super().__init__(
             local=Path(cfg.paths.mds / 'onefox').expanduser().as_posix(),
             split=split,
             shuffle=True,
-            batch_size=batch_size,
+            batch_size=cfg.training.batch_size,
         )
 
         self.cfg = cfg
@@ -88,28 +88,18 @@ def get_dataloaders(cfg: CFG) -> Tuple[StreamingDataLoader, StreamingDataLoader]
     Returns:
         Tuple of (train_loader, val_loader)
     """
-    batch_size = cfg.training.batch_size
 
     # Clean stale shared memory
     clean_stale_shared_memory()
 
     # Create datasets
-    train_dataset = FAXStreamingDataset(
-        cfg=cfg,
-        split='train',
-        batch_size=batch_size,
-    )
-
-    val_dataset = FAXStreamingDataset(
-        cfg=cfg,
-        split='val',
-        batch_size=batch_size,
-    )
+    train_dataset = FAXStreamingDataset(cfg=cfg, split='train')
+    val_dataset = FAXStreamingDataset(cfg=cfg, split='val')
 
     # Create dataloaders
     train_loader = StreamingDataLoader(
         train_dataset,
-        batch_size=batch_size,
+        batch_size=cfg.training.batch_size,
         collate_fn=collate_tensordicts,
         num_workers=cfg.training.n_dataworkers,
         pin_memory=True,
@@ -119,7 +109,7 @@ def get_dataloaders(cfg: CFG) -> Tuple[StreamingDataLoader, StreamingDataLoader]
 
     val_loader = StreamingDataLoader(
         val_dataset,
-        batch_size=batch_size,
+        batch_size=cfg.training.batch_size,
         collate_fn=collate_tensordicts,
         num_workers=cfg.training.n_dataworkers,
         pin_memory=True,
@@ -128,19 +118,6 @@ def get_dataloaders(cfg: CFG) -> Tuple[StreamingDataLoader, StreamingDataLoader]
     )
 
     return train_loader, val_loader
-
-
-def save_dataloader_state(loader: StreamingDataLoader, path: Path) -> None:
-    """Checkpoint the dataloader state to disk."""
-    state = loader.state_dict()
-    with path.open('wb') as f:
-        torch.save(state, f)
-
-
-def load_dataloader_state(loader: StreamingDataLoader, path: Path) -> None:
-    """Load checkpointed dataloader state from disk."""
-    state = torch.load(path)
-    loader.load_state_dict(state)
 
 
 if __name__ == '__main__':
