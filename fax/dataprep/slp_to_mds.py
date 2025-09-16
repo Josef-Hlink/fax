@@ -2,10 +2,9 @@
 # -*- coding: utf-8 -*-
 
 """
-This script converts a directory of .slp files into 3 MDS datasets:
-  - fox dittos
-  - one-fox games (split into train/val)
-  - no-fox games (split into train/val)
+This script converts a directory of (bucketed) .slp files into 3 MDS datasets.
+Each bucket (nofox, onefox, twofox) is split into train and validation sets (95%/5%).
+The resulting MDS datasets can be used for training the agents.
 """
 
 import sys
@@ -15,7 +14,7 @@ import random
 import struct
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Set
+from typing import Any, Dict, List, Optional
 
 import melee
 import numpy as np
@@ -25,81 +24,25 @@ from tqdm import tqdm
 
 from fax.config import create_parser, parse_args
 from fax.constants import NP_MASK_VALUE
-from fax.dataprep.database import DataBase
 from fax.gamestate_utils import FrameData, extract_and_append_gamestate_inplace
 from fax.schema import MDS_DTYPE_STR_BY_COLUMN, NP_TYPE_BY_COLUMN
 
 
-def slp_to_mds(slp_dir: Path, db_path: Path, mds_dir: Path, seq_len: int) -> None:
+def slp_to_mds(slp_dir: Path, mds_dir: Path) -> None:
     """Convert a directory of .slp files into an MDS dataset.
     Args:
         slp_dir: Directory containing .slp files to convert.
-        db_path: Path to the SQLite database file where the .slp files are indexed.
         mds_dir: Directory where the MDS datasets will be created.
-        seq_len: Minimum sequence length (in frames) for a replay to be included.
     """
-
-    db = DataBase(db_path)
-    # remove faulty replays from disk
-    faulty_replays = (
-        db.get_corrupted_replays()
-        + db.get_unfinished_replays()
-        + db.get_short_replays(min_frames=seq_len)
-    )
-    remove_faulty_replays(slp_dir, set(faulty_replays))
-    # split files into fox dittos, one-fox, and no-fox datasets
-    twofox, onefox, nofox = split_on_fox(slp_dir, db)
-    # first write the dittos (they don't need to be split in train/val)
-    twofox_files = [slp_dir / f for f in twofox]
-    random.shuffle(twofox_files)
-    process_replays(twofox_files, mds_dir / 'twofox')
-    # then write the one-fox and no-fox datasets (they get split in train/val)
-    for datasetname, filenames in [('onefox', onefox), ('nofox', nofox)]:
-        files = list(slp_dir / f for f in filenames)
+    for bucket in ['nofox', 'onefox', 'twofox']:
+        files = list((slp_dir / bucket).glob('*.slp'))
         random.shuffle(files)
         splits = split_train_val(files, split=0.95)
         for split, data in splits.items():
-            split_output_dir = mds_dir / datasetname / split
+            split_output_dir = mds_dir / bucket / split
             split_output_dir.mkdir(parents=True, exist_ok=True)
             process_replays(data, split_output_dir)
     return
-
-
-def remove_faulty_replays(slp_dir: Path, replays: Set[str]) -> None:
-    """Remove replay files that resulted in parse errors from the directory."""
-    if not replays:
-        logger.info('No faulty replays to remove')
-        return
-    logger.warning(f'Removing {len(replays)} faulty replay files from {slp_dir}...')
-    for replay in replays:
-        slp_path = slp_dir / replay
-        if slp_path.exists():
-            slp_path.unlink()
-            logger.debug(f'Removed {slp_path}')
-        else:
-            logger.warning(f'File {slp_path} does not exist; cannot remove')
-    logger.info('Finished removing faulty replay files')
-    return
-
-
-def split_on_fox(slp_dir: Path, db: DataBase) -> Tuple[set[str], set[str], set[str]]:
-    """Split .slp files into fox dittos, one-fox, and no-fox datasets."""
-    # all .slp files that still exist on disk are valid (problematic ones were deleted)
-    all_valid_files = {f.name for f in slp_dir.rglob('*.slp')}
-    logger.debug(f'Found {len(all_valid_files)} valid .slp files in {slp_dir}')
-    # check index for all fox files and fox dittos
-    indexed_fox = set(db.query_character('fox'))
-    indexed_dittos = set(db.query_matchup('fox', 'fox'))
-    logger.debug(f'Found {len(indexed_fox)} indexed fox files in database')
-    logger.debug(f'Found {len(indexed_dittos)} fox ditto files in database')
-    # set operations
-    onefox_files = (indexed_fox - indexed_dittos) & all_valid_files
-    logger.info(f'Arrived at {len(onefox_files)} valid one-fox replays')
-    twofox_files = indexed_dittos & all_valid_files
-    logger.info(f'Arrived at {len(twofox_files)} valid fox ditto replays')
-    nofox_files = all_valid_files - indexed_fox
-    logger.info(f'Arrived at {len(nofox_files)} valid no-fox replays')
-    return twofox_files, onefox_files, nofox_files
 
 
 def hash_to_int32(data: str) -> int:
@@ -200,16 +143,13 @@ def process_replays(replay_paths: list[Path], mds_dir: Path) -> None:
 
 
 if __name__ == '__main__':
-    exposed_args = {'PATHS': 'slp sql mds', 'BASE': 'seed debug', 'MODEL': 'seq-len'}
+    exposed_args = {'PATHS': 'slp mds', 'BASE': 'seed debug'}
     parser = create_parser(exposed_args)
     cfg = parse_args(parser.parse_args(), __file__)
 
     # resolve paths
     slp_dir = cfg.paths.slp.expanduser().resolve()
     assert slp_dir.is_dir(), f'{slp_dir} is not a directory'
-    assert any(slp_dir.rglob('*.slp')), f'No .slp files found in {slp_dir}'
-
-    db_path = cfg.paths.sql.expanduser().resolve()
 
     mds_dir = cfg.paths.mds.expanduser().resolve()
     if mds_dir.exists() and any(mds_dir.iterdir()):
@@ -219,4 +159,4 @@ if __name__ == '__main__':
 
     random.seed(cfg.base.seed)
 
-    slp_to_mds(slp_dir, db_path, mds_dir, cfg.model.seq_len)
+    slp_to_mds(slp_dir, mds_dir)

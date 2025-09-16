@@ -1,6 +1,10 @@
 [PATHS]
 iso = "~/Data/fax/Super Smash Bros. Melee (USA) (En,Ja) (v1.02).iso"
 exe = "~/Data/fax/Slippi_Online-x86_64-ExiAI.AppImage"
+zips = [
+    "~/Data/fax/zips/ranked-anonymized-*.zip",  # 1-3
+    "~/Data/ssd2/zips/ranked-anonymized-*.zip",  # 4-6
+]
 slp = "~/Data/fax/ranked-anonymized/"
 sql = "~/Data/fax/index.db"
 mds = "~/Data/fax/mds/"
@@ -16,8 +20,8 @@ n-gpus = 1
 [TRAINING]
 batch-size = 64
 n-epochs = 100
-n-samples = 131072  # 2^17
-n-val-samples = 4096  # 2^12
+n-samples = 16_384  # 2^14
+n-val-samples = 2_048  # 2^11
 n-dataworkers = 8
 [MODEL]
 n-layers = 4

@@ -1,14 +1,12 @@
-#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 """
 This module houses functions for reading and parsing .slp files into
 ReplayRecord instances for easy access to relevant fields using peppi_py.
-Example usage in __main__ at the bottom.
 """
 
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Tuple
 
 import attr
 import numpy as np
@@ -16,82 +14,125 @@ import pyarrow as pa
 from loguru import logger
 from peppi_py import Game, read_slippi
 
-from fax.config import debug_enabled
-from fax.constants import CHARACTER_ID_TO_NAME, STAGE_ID_TO_NAME
-from fax.utils import timed
+
+FOX = 2  # character ID for Fox
 
 
 @attr.s(auto_attribs=True, slots=True)
-class ReplayRecord:
+class TrainReplayRecord:
+    archive: str
+    bucket: int
     file_name: str
     stage: int
     p1char: int
     p2char: int
-    # possible to derive from stocks left, but inexpensive to store
     winner: int
-    # cpu level is p2 is cpu, None if human vs human
+    p1stocks: int
+    p2stocks: int
+    n_frames: int
+    p1rank: Optional[str]
+    p2rank: Optional[str]
+
+
+@attr.s(auto_attribs=True, slots=True)
+class EvalReplayRecord:
+    file_name: str
+    stage: int
+    p1char: int
+    p2char: int
+    winner: int
+    p1stocks: int
+    p2stocks: int
+    n_frames: int
     cpu_lvl: Optional[int] = None
-    # stocks left at end of game, None if not parsed
-    p1stocks: Optional[int] = None
-    p2stocks: Optional[int] = None
-    # replay length in frames, None if not parsed
-    n_frames: Optional[int] = None
-    # netplay ranks
-    p1rank: Optional[str] = None
-    p2rank: Optional[str] = None
 
 
-@timed
-def parse_replay(
-    slp_path: Path,
-    parse_full: bool = False,
-    parse_ranks: bool = False,
-) -> ReplayRecord:
-    """Read contents of a .slp file and return a ReplayRecord."""
+def parse_train_replay(
+    file: Path, arch: str, dirs: Tuple[Path, ...], bucket_limit: int
+) -> Optional[TrainReplayRecord]:
+    # parse minimally to check starting stocks and number of foxes
+    try:
+        game: Game = read_slippi(file.as_posix(), skip_frames=True)
+    except Exception as e:
+        logger.debug(f'Failed to read {file.name}: {e}')
+        return
 
-    skip_frames = not parse_full  # only need frames if parsing full replay
-    game: Game = read_slippi(slp_path.as_posix(), skip_frames=skip_frames)
+    # stop early if not both players started with 4 stocks
+    if not (game.start.players[0].stocks == 4 and game.start.players[1].stocks == 4):
+        return
 
-    assert game.end.players is not None, 'game not ended properly'
-    record = ReplayRecord(
-        file_name=str(slp_path.name),
+    # determine potential destination directory based on number of foxes
+    # stop early if already enough samples of this category
+    p1char = game.start.players[0].character
+    p2char = game.start.players[1].character
+    n_fox = (p1char == FOX) + (p2char == FOX)
+    if len(list(dirs[n_fox].iterdir())) >= bucket_limit:
+        return
+
+    # check if game was ended properly
+    game = read_slippi(file.as_posix(), skip_frames=False)
+    assert game.frames is not None and len(game.frames.ports) == 2, 'not a valid 1v1 game'
+    p1stocks = as_int(game.frames.ports[0].leader.post.stocks[-1])
+    p2stocks = as_int(game.frames.ports[1].leader.post.stocks[-1])
+    if not (p1stocks == 0 or p2stocks == 0):
+        logger.debug(f'Game in {file.name} did not end properly')
+        return
+
+    # also find netplay ranks if available
+    ranks = [
+        p.netplay.name.replace(' Player', '') if p.netplay else None for p in game.start.players
+    ]
+
+    # create and return record
+    return TrainReplayRecord(
+        archive=arch,
+        bucket=n_fox,
+        file_name=file.name,
+        stage=game.start.stage,
+        p1char=p1char,
+        p2char=p2char,
+        winner=1 if p2stocks == 0 else 2,
+        p1stocks=p1stocks,
+        p2stocks=p2stocks,
+        n_frames=len(game.frames.ports[0].leader.post.stocks),
+        p1rank=ranks[0],
+        p2rank=ranks[1],
+    )
+
+
+def parse_eval_replay(file: Path) -> Optional[EvalReplayRecord]:
+    """Read contents of a .slp file and return an EvalReplayRecord."""
+
+    try:
+        game: Game = read_slippi(file.as_posix(), skip_frames=True)
+    except Exception as e:
+        logger.warning(f'Failed to read {file.name}: {e}')
+        return
+
+    # check if game was ended properly
+    assert game.frames is not None and len(game.frames.ports) == 2, 'not a valid 1v1 game'
+    p1stocks = as_int(game.frames.ports[0].leader.post.stocks[-1])
+    p2stocks = as_int(game.frames.ports[1].leader.post.stocks[-1])
+    if not (p1stocks == 0 or p2stocks == 0):
+        logger.debug(f'Game in {file.name} did not end properly')
+
+    # check if we have a CPU player
+    cpu_lvl = None
+    if game.start.players[1].type.name == 'CPU':
+        cpu_lvl = game.start.players[1].type.value
+
+    # create and return record
+    return EvalReplayRecord(
+        file_name=file.name,
         stage=game.start.stage,
         p1char=game.start.players[0].character,
         p2char=game.start.players[1].character,
-        winner=1 if game.end.players[0].placement < game.end.players[1].placement else 2,
+        winner=1 if p2stocks == 0 else 2,
+        p1stocks=p1stocks,
+        p2stocks=p2stocks,
+        n_frames=len(game.frames.ports[0].leader.post.stocks),
+        cpu_lvl=cpu_lvl,
     )
-
-    if game.start.players[1].type.name == 'CPU':
-        record.cpu_lvl = game.start.players[1].type.value
-
-    if parse_full:
-        assert game.frames is not None, 'frames not parsed'
-        assert len(game.frames.ports) == 2, 'not a 1v1 game'
-        record.p1stocks = as_int(game.frames.ports[0].leader.post.stocks[-1])
-        record.p2stocks = as_int(game.frames.ports[1].leader.post.stocks[-1])
-        record.n_frames = len(game.frames.ports[0].leader.post.stocks)
-
-    if parse_ranks:
-        assert game.start.players[0].netplay is not None, 'not a netplay replay'
-        assert game.start.players[1].netplay is not None, 'not a netplay replay'
-        record.p1rank = game.start.players[0].netplay.name.replace(' Player', '')
-        record.p2rank = game.start.players[1].netplay.name.replace(' Player', '')
-
-    if not debug_enabled():
-        return record
-
-    # log all fields if in debug mode
-    for field in attr.fields(ReplayRecord):
-        key = field.name
-        value = getattr(record, key)
-        if key == 'stage':
-            logger.debug(f'{key}: {STAGE_ID_TO_NAME.get(value, "UNKNOWN")} ({value})')
-        elif key in ('p1char', 'p2char'):
-            logger.debug(f'{key}: {CHARACTER_ID_TO_NAME.get(value, "UNKNOWN")} ({value})')
-        else:
-            logger.debug(f'{key}: {value}')
-
-    return record
 
 
 def as_int(x: Any) -> int:
@@ -101,32 +142,3 @@ def as_int(x: Any) -> int:
     if isinstance(x, np.generic):
         return int(x.item())
     return int(x)
-
-
-if __name__ == '__main__':
-    import sys
-    from argparse import ArgumentParser
-
-    parser = ArgumentParser(description='Parse a .slp replay file.')
-    parser.add_argument('slp_path', type=Path, help='Path to the .slp file to parse.')
-    parser.add_argument('-f', '--full', action='store_true')
-    parser.add_argument('-r', '--ranks', action='store_true')
-    parser.add_argument('-D', '--debug', action='store_true')
-    args = parser.parse_args()
-
-    # set up logging
-    logger.remove()
-    logger.add(sys.stderr, level='DEBUG' if args.debug else 'INFO')
-    logger.debug('Debug mode enabled')
-
-    record = parse_replay(args.slp_path, args.full, args.ranks)
-    for field in attr.fields(ReplayRecord):
-        key = field.name
-        value = getattr(record, key)
-        if key == 'stage':
-            logger.info(f'{key}: {STAGE_ID_TO_NAME.get(value, "UNKNOWN")} ({value})')
-        elif key in ('p1char', 'p2char'):
-            logger.info(f'{key}: {CHARACTER_ID_TO_NAME.get(value, "UNKNOWN")} ({value})')
-        else:
-            logger.info(f'{key}: {value}')
-    logger.info('completed parsing replay with no errors')

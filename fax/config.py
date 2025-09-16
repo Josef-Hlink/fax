@@ -1,8 +1,9 @@
 import sys
 import tomllib
+from glob import glob
 from pathlib import Path
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser, Namespace
-from typing import Dict, Type
+from typing import Dict, List, Type
 
 import attr
 from loguru import logger
@@ -20,6 +21,7 @@ with open(_PROJ / 'help.toml', 'rb') as f:
 class PathsCFG:
     iso: Path
     exe: Path
+    zips: List[Path]
     slp: Path
     sql: Path
     mds: Path
@@ -108,6 +110,15 @@ def create_parser(argnames: Dict[str, str]) -> ArgumentParser:
             default = DEFAULTS.get(section, {}).get(name, None)
 
             if section == 'PATHS':
+                if isinstance(default, list):
+                    parser.add_argument(
+                        arg_name,
+                        type=Path,
+                        nargs='+',
+                        default=[Path(d).expanduser().resolve() for d in default],
+                        help=help_msg,
+                    )
+                    continue
                 default = Path(default).expanduser().resolve()
             if isinstance(default, bool):
                 parser.add_argument(arg_name, action='store_true', help=help_msg)
@@ -142,6 +153,11 @@ def parse_args(args: Namespace, caller: str) -> CFG:
             # cast to field type
             if field.type is Path:
                 val = Path(val).expanduser().resolve()
+            elif field.type is List[Path]:
+                _val = []
+                for v in val:
+                    _val.extend([Path(p).expanduser().resolve() for p in glob(v.as_posix())])
+                val = _val
             elif field.type is not None:
                 val = field.type(val)
             values[field.name] = val
@@ -188,8 +204,8 @@ def debug_enabled() -> bool:
 
 if __name__ == '__main__':
     exposed_args = {
-        'PATHS': 'iso exe logs dolphin-home',
-        'BASE': 'debug n-gpus',
+        'PATHS': 'iso exe zips slp sql mds runs logs replays dolphin-home',
+        'BASE': 'seed debug wandb n-gpus',
         'TRAINING': 'batch-size n-epochs n-samples n-val-samples n-dataworkers',
         'MODEL': 'n-layers n-heads seq-len emb-dim dropout gamma',
         'OPTIM': 'lr wd b1 b2',

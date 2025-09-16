@@ -12,7 +12,7 @@ from typing import List
 from loguru import logger
 
 from fax.constants import CHARACTER_NAME_TO_ID
-from fax.dataprep.slp_reader import ReplayRecord
+from fax.dataprep.slp_reader import TrainReplayRecord
 
 
 class DataBase:
@@ -31,57 +31,45 @@ class DataBase:
     def create_replays_table(self) -> None:
         """Create the replays table in the database."""
         self.cursor.execute("""
-            CREATE TABLE IF NOT EXISTS ranked_replays (
+            CREATE TABLE IF NOT EXISTS replays (
                 id INTEGER PRIMARY KEY,
+                archive TEXT NOT NULL,
+                bucket INTEGER NOT NULL,
                 file_name TEXT UNIQUE NOT NULL,
                 stage INTEGER NOT NULL,
                 p1char INTEGER NOT NULL,
                 p2char INTEGER NOT NULL,
                 winner INTEGER NOT NULL,
-                p1rank TEXT NOT NULL,
-                p2rank TEXT NOT NULL,
                 p1stocks INTEGER NOT NULL,
                 p2stocks INTEGER NOT NULL,
-                n_frames INTEGER NOT NULL
+                n_frames INTEGER NOT NULL,
+                p1rank TEXT,
+                p2rank TEXT
             )
         """)
         self.conn.commit()
         logger.debug('Created ranked_replays table')
         return
 
-    def create_errors_table(self) -> None:
-        """Create the parse_errors table in the database."""
-        self.cursor.execute("""
-            CREATE TABLE IF NOT EXISTS parse_errors (
-                id INTEGER PRIMARY KEY,
-                file_name TEXT UNIQUE NOT NULL,
-                error_message TEXT NOT NULL
-            )
-        """)
-        self.conn.commit()
-        logger.debug('Created parse_errors table')
-        return
-
-    def insert_replay(self, record: ReplayRecord) -> None:
-        """Insert a ReplayRecord into the ranked_replays table."""
-        assert record.p1rank is not None and record.p2rank is not None, (
-            'Ranks must be provided to insert replay'
-        )
+    def insert_replay(self, record: TrainReplayRecord) -> None:
+        """Insert a TrainReplayRecord into the replays table."""
         fields = (
+            'archive',
+            'bucket',
             'file_name',
             'stage',
             'p1char',
             'p2char',
             'winner',
-            'p1rank',
-            'p2rank',
             'p1stocks',
             'p2stocks',
             'n_frames',
+            'p1rank',
+            'p2rank',
         )
         self.cursor.execute(
             f"""
-            INSERT OR IGNORE INTO ranked_replays ({', '.join(fields)})
+            INSERT OR IGNORE INTO replays ({', '.join(fields)})
             VALUES ({', '.join(['?' for _ in fields])})
         """,
             tuple(map(lambda f: getattr(record, f), fields)),
@@ -90,59 +78,11 @@ class DataBase:
         logger.debug(f'Inserted replay {record.file_name} into database')
         return
 
-    def insert_error(self, file_name: str, error_message: str) -> None:
-        """Insert a parse error into the parse_errors table."""
-        self.cursor.execute(
-            """
-            INSERT OR IGNORE INTO parse_errors (file_name, error_message)
-            VALUES (?, ?)
-        """,
-            (file_name, error_message),
-        )
-        self.conn.commit()
-        logger.debug(f'Inserted parse error for {file_name} into database')
-        return
-
     @property
     def n_replays(self) -> int:
         """Return the number of replays in the database."""
-        self.cursor.execute('SELECT COUNT(*) FROM ranked_replays')
+        self.cursor.execute('SELECT COUNT(*) FROM replays')
         return self.cursor.fetchone()[0]
-
-    @property
-    def n_errors(self) -> int:
-        """Return the number of parse errors in the database."""
-        self.cursor.execute('SELECT COUNT(*) FROM parse_errors')
-        return self.cursor.fetchone()[0]
-
-    def get_corrupted_replays(self) -> List[str]:
-        """Files that failed to parse, mostly due to unfilled buffers."""
-        self.cursor.execute('SELECT file_name FROM parse_errors')
-        return [row[0] for row in self.cursor.fetchall()]
-
-    def get_unfinished_replays(self) -> List[str]:
-        """Files that parsed but were not finished games (e.g. DCs, timeouts)."""
-        self.cursor.execute("""
-            SELECT file_name FROM ranked_replays
-            WHERE p1stocks > 0 AND p2stocks > 0
-        """)
-        return [row[0] for row in self.cursor.fetchall()]
-
-    def get_short_replays(self, min_frames: int) -> List[str]:
-        """Files that parsed but were shorter than min_frames.
-        Args:
-            min_frames: Minimum number of frames for a replay to be considered valid.
-        Returns:
-            List of file names with fewer than min_frames.
-        """
-        self.cursor.execute(
-            """
-            SELECT file_name FROM ranked_replays
-            WHERE n_frames < ?
-        """,
-            (min_frames,),
-        )
-        return [row[0] for row in self.cursor.fetchall()]
 
     def query_character(self, char: int | str) -> List[str]:
         """Query the database for replays involving a specific character (as either player).
@@ -155,7 +95,7 @@ class DataBase:
             char = CHARACTER_NAME_TO_ID[char.upper()]
         self.cursor.execute(
             """
-            SELECT file_name FROM ranked_replays
+            SELECT file_name FROM replays
             WHERE p1char = ? OR p2char = ?
         """,
             (char, char),

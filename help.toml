@@ -1,6 +1,7 @@
 [PATHS]
 iso = "Path to your Melee ISO file."
 exe = "Path to your headless Dolphin executable."
+zips = "List of paths to your .zip files containing .slp files (supports glob patterns)."
 slp = "Path to your directory of (unzipped) .slp files."
 sql = "Path where the SQLite database file for indexing .slp files is stored."
 mds = "Home directory for your .mds datasets."
@@ -15,8 +16,12 @@ wandb = "If true, will log training metrics to Weights & Biases."
 n-gpus = "Number of GPUs to use for training. Set to 0 for CPU training."  # TODO: support >1
 [TRAINING]
 batch-size = "Number of samples to be propagated through the network at once during training and evaluation."
-n-epochs = "Number of epochs to train for. Evaluation happens at the end of each epoch."
-n-samples = "Number of training samples to draw from the dataset for each epoch. Can be less than or greater than the number of replays in the dataset."
+n-epochs = "Number of epochs to train for. Validation happens at the end of each epoch."
+n-samples = """
+    Number of training samples to draw from the dataset for each epoch.
+    This parameter is also used to determine the number of .slp files to load from the zip archives,
+    this way we sample exactly one sequence from each episode (replay).
+"""
 n-val-samples = "Number of samples to use for validation at the end of each epoch."
 n-dataworkers = "Number of subprocesses MosaicML will use to load data."
 [MODEL]
