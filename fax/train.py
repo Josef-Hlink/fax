@@ -99,8 +99,8 @@ class Trainer(torch.nn.Module):
             self.scheduler.step()
 
             total_loss += loss.item()
-            if self.writer:
-                self.writer.log({'train/loss': loss.item()}, None, commit=True)
+            self.writer.log({'train/loss': loss.item()}, None, commit=True)
+            self.writer.log({'train/lr': self.scheduler.get_last_lr()[0]}, None, commit=False)
             pbar.set_postfix({'loss': loss.item()})
 
         return total_loss / len(train_loader)
