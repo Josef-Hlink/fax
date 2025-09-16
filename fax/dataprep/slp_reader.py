@@ -6,7 +6,7 @@ ReplayRecord instances for easy access to relevant fields using peppi_py.
 """
 
 from pathlib import Path
-from typing import Any, Optional, Tuple
+from typing import Any, Optional, List
 
 import attr
 import numpy as np
@@ -48,28 +48,30 @@ class EvalReplayRecord:
 
 
 def parse_train_replay(
-    file: Path, arch: str, dirs: Tuple[Path, ...], bucket_limit: int
+    file: Path, arch: str, bucket_counts: List[int], bucket_limit: int
 ) -> Optional[TrainReplayRecord]:
-    # parse minimally to check starting stocks and number of foxes
+    # first parse minimally to check some cheap early exit conditions
     try:
         game: Game = read_slippi(file.as_posix(), skip_frames=True)
     except Exception as e:
         logger.debug(f'Failed to read {file.name}: {e}')
         return
 
+    # determine potential destination directory based on number of foxes
+    # stop early if already enough samples of this category
+    # we handle this first, as it's the most one most likely to hit
+    # (we fill up nofox and onefox rather quickly)
+    p1char = game.start.players[0].character
+    p2char = game.start.players[1].character
+    bucket = (p1char == FOX) + (p2char == FOX)  # 0, 1, or 2 foxes
+    if bucket_counts[bucket] >= bucket_limit:
+        return
+
     # stop early if not both players started with 4 stocks
     if not (game.start.players[0].stocks == 4 and game.start.players[1].stocks == 4):
         return
 
-    # determine potential destination directory based on number of foxes
-    # stop early if already enough samples of this category
-    p1char = game.start.players[0].character
-    p2char = game.start.players[1].character
-    n_fox = (p1char == FOX) + (p2char == FOX)
-    if len(list(dirs[n_fox].iterdir())) >= bucket_limit:
-        return
-
-    # check if game was ended properly
+    # check if game was ended properly (no try guard here, we know the file is readable)
     game = read_slippi(file.as_posix(), skip_frames=False)
     assert game.frames is not None and len(game.frames.ports) == 2, 'not a valid 1v1 game'
     p1stocks = as_int(game.frames.ports[0].leader.post.stocks[-1])
@@ -86,7 +88,7 @@ def parse_train_replay(
     # create and return record
     return TrainReplayRecord(
         archive=arch,
-        bucket=n_fox,
+        bucket=bucket,
         file_name=file.name,
         stage=game.start.stage,
         p1char=p1char,

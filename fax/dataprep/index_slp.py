@@ -64,7 +64,7 @@ def process_zip_arch(arch_file: Path, out_dir: Path, db_path: Path, bucket_limit
             file = maybe_gunzip(tmp_path)
 
             # parse and index the replay
-            record = parse_train_replay(file, arch_file.name, dirs, bucket_limit)
+            record = parse_train_replay(file, arch_file.name, bucket_counts, bucket_limit)
             if record is not None:
                 db.insert_replay(record)
                 dest = dirs[record.bucket] / record.file_name
@@ -100,7 +100,7 @@ if __name__ == '__main__':
         logger.error(f'Database file {cfg.paths.sql} already exists. Please delete it first.')
         sys.exit(1)
 
-    for arch_file in sorted(cfg.paths.zips):
+    for arch_file in sorted(cfg.paths.zips, key=lambda p: p.name):
         if not arch_file.is_file() or not arch_file.name.endswith('.zip'):
             logger.warning(f'Skipping non-zip file {arch_file}')
             continue
@@ -111,4 +111,4 @@ if __name__ == '__main__':
             bucket_limit=cfg.training.n_samples,
         )
 
-    logger.info('All done!')
+    logger.info('All done! You can now proceed to convert the .slp files into MDS format.')
