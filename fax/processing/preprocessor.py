@@ -84,7 +84,7 @@ class Preprocessor:
     def target_size(self) -> int:
         return self.target_config.target_size
 
-    def sample_from_episode(self, td: TensorDict, debug: bool = False) -> TensorDict:
+    def sample_from_episode(self, td: TensorDict) -> TensorDict:
         """Randomly slice input/target features into trajectory_sampling_len sequences for supervised training.
 
         Can be substituted with feature buffer at eval / runtime.
@@ -96,7 +96,7 @@ class Preprocessor:
             TensorDict of shape (trajectory_sampling_len,)
         """
         episode_len = td.shape[0]
-        sample_index = 0 if debug else random.randint(0, episode_len - self.trajectory_sampling_len)
+        sample_index = random.randint(0, episode_len - self.trajectory_sampling_len)
         return td[sample_index : sample_index + self.trajectory_sampling_len]
 
     def preprocess_inputs(self, sample_T: TensorDict, ego: Player) -> TensorDict:

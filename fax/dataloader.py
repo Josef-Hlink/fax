@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import random
 from pathlib import Path
-from typing import Any, Sequence, Tuple
+from typing import Any, Optional, Sequence, Tuple
 
 import torch
 from streaming import StreamingDataLoader, StreamingDataset
@@ -33,12 +33,17 @@ class FAXStreamingDataset(StreamingDataset):
     6. Returns training-ready input/target pairs
     """
 
-    def __init__(self, cfg: CFG, split: str = 'train'):
+    def __init__(self, cfg: CFG, dataset_name: str, split: Optional[str] = None):
         """Fax streaming dataset constructor."""
 
-        n_samples = cfg.training.n_samples if split == 'train' else cfg.training.n_val_samples
+        if split == 'train':
+            n_samples = cfg.training.n_samples
+        elif split is None or split == 'val':
+            n_samples = cfg.training.n_val_samples
+        else:
+            raise ValueError(f"Invalid split '{split}'. Must be 'train', 'val', or None.")
         super().__init__(
-            local=Path(cfg.paths.mds / 'onefox').expanduser().as_posix(),
+            local=(cfg.paths.mds / dataset_name).expanduser().as_posix(),
             split=split,
             shuffle=True,
             batch_size=cfg.training.batch_size,
@@ -46,10 +51,7 @@ class FAXStreamingDataset(StreamingDataset):
         )
 
         self.cfg = cfg
-        self.preprocessor = Preprocessor(
-            cfg, load_dataset_stats(cfg.paths.mds / 'onefox')
-        )  # TODO: parameterize dataset name
-        self.is_train = split == 'train'  # for reproducible sampling during validation
+        self.preprocessor = Preprocessor(cfg, load_dataset_stats(cfg.paths.mds / dataset_name))
 
     def __getitem__(self, idx: Any) -> TensorDict:
         # Get raw episode data from MDS
@@ -59,10 +61,10 @@ class FAXStreamingDataset(StreamingDataset):
         episode_td = convert_ndarray_to_tensordict(episode_data)
 
         # Sample a subsequence for training
-        sample_td = self.preprocessor.sample_from_episode(episode_td, debug=not self.is_train)
+        sample_td = self.preprocessor.sample_from_episode(episode_td)
 
         # Randomly choose ego player (p1 or p2)
-        ego: Player = random.choice(['p1', 'p2']) if self.is_train else 'p1'
+        ego: Player = random.choice(['p1', 'p2'])
 
         # Preprocess inputs and targets
         inputs_td = self.preprocessor.preprocess_inputs(sample_td, ego)
@@ -80,7 +82,9 @@ class FAXStreamingDataset(StreamingDataset):
         return TensorDict(payload, batch_size=())
 
 
-def get_dataloaders(cfg: CFG) -> Tuple[StreamingDataLoader, StreamingDataLoader]:
+def get_dataloaders(
+    cfg: CFG, dataset_name: str
+) -> Tuple[StreamingDataLoader, StreamingDataLoader, StreamingDataLoader]:
     """
     Create train and validation dataloaders.
 
@@ -88,15 +92,16 @@ def get_dataloaders(cfg: CFG) -> Tuple[StreamingDataLoader, StreamingDataLoader]
         cfg: Training configuration containing data directory and batch size
 
     Returns:
-        Tuple of (train_loader, val_loader)
+        Tuple of (train_loader, val_loader, test_loader)
     """
 
     # Clean stale shared memory
     clean_stale_shared_memory()
 
     # Create datasets
-    train_dataset = FAXStreamingDataset(cfg=cfg, split='train')
-    val_dataset = FAXStreamingDataset(cfg=cfg, split='val')
+    train_dataset = FAXStreamingDataset(cfg=cfg, dataset_name=dataset_name, split='train')
+    val_dataset = FAXStreamingDataset(cfg=cfg, dataset_name=dataset_name, split='val')
+    test_dataset = FAXStreamingDataset(cfg=cfg, dataset_name='twofox')
 
     # Create dataloaders
     train_loader = StreamingDataLoader(
@@ -119,14 +124,24 @@ def get_dataloaders(cfg: CFG) -> Tuple[StreamingDataLoader, StreamingDataLoader]
         prefetch_factor=2,
     )
 
-    return train_loader, val_loader
+    test_loader = StreamingDataLoader(
+        test_dataset,
+        batch_size=cfg.training.batch_size,
+        collate_fn=collate_tensordicts,
+        num_workers=cfg.training.n_dataworkers,
+        pin_memory=True,
+        persistent_workers=False,
+        prefetch_factor=2,
+    )
+
+    return train_loader, val_loader, test_loader
 
 
 if __name__ == '__main__':
     exposed_args = {'PATHS': 'mds', 'TRAINING': 'batch-size', 'MODEL': 'seq-len'}
     parser = create_parser(exposed_args)
     cfg = parse_args(parser.parse_args(), __file__)
-    train_loader, val_loader = get_dataloaders(cfg=cfg)
+    train_loader, val_loader, test_loader = get_dataloaders(cfg=cfg, dataset_name='onefox')
 
     for i, batch in enumerate(train_loader):
         print(f'Batch #{i + 1}:')

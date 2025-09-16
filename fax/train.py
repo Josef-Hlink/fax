@@ -36,7 +36,7 @@ def train(cfg: CFG, dataset_name: str) -> None:
     logger.info(f'Model has {sum(p.numel() for p in model.parameters()):,} parameters.')
 
     # Get dataloaders
-    train_loader, val_loader = get_dataloaders(cfg)
+    train_loader, val_loader, test_loader = get_dataloaders(cfg, dataset_name)
 
     # Initialize trainer
     trainer = Trainer(cfg, model)
@@ -55,6 +55,11 @@ def train(cfg: CFG, dataset_name: str) -> None:
             torch.save(model.state_dict(), cfg.paths.runs / trainer.run_name / 'best_model.pth')
             logger.info(f'Saved new best model with Val Loss = {best_val_loss:.4f}')
 
+    # Final evaluation on test set
+    test_loss = trainer.validate(test_loader)
+    logger.info(f'Test Loss = {test_loss:.4f}')
+    trainer.writer.log({'test/loss': test_loss}, None, commit=True)
+    trainer.writer.finish()
     logger.info('Training complete.')
 
 
