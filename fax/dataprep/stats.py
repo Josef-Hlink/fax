@@ -5,7 +5,7 @@
 Feature statistics calculation, saving, and loading for MDS datasets.
 Callable as script for calculating and saving stats to JSON.
 
-Largely copied from https://github.com/ericyuegu/hal
+Largely adapted from https://github.com/ericyuegu/hal
 """
 
 import json
@@ -47,19 +47,12 @@ def load_dataset_stats(path: Path) -> Dict[str, FeatureStats]:
 
 def calculate_dataset_stats(path: Path) -> None:
     """Calculate and save statistics for each feature in the MDS dataset to a JSON.
-
     Args:
-        path (Path): Path of the MDS dataset directory.
-    This directory should contain either an index.json file or
-    'train' and 'val' subdirectories (which then do contain index.json files).
-    The statistics will be saved to stats.json in this directory (top-level).
+        path (Path): Path of the MDS dataset directory (either train or val).
+    Returns:
+        None, saves stats to stats.json in the given directory (alongside index.json).
     """
-    if (path / 'index.json').exists():
-        streams = [Stream(local=path.as_posix())]
-    else:  # look for 'train' and 'val' subdirectories
-        streams = [Stream(local=split.as_posix()) for split in [path / 'train', path / 'val']]
-
-    dataset = StreamingDataset(streams=streams, batch_size=1, shuffle=False)
+    dataset = StreamingDataset(streams=[Stream(local=path.as_posix())])
     statistics = {}
     logger.info(f'Starting statistics calculation for dataset at {path}')
 
@@ -76,7 +69,7 @@ def calculate_dataset_stats(path: Path) -> None:
 
             numpy_array = ma.masked_greater_equal(field_data, NP_MASK_VALUE)
 
-            valid_data = numpy_array.compressed()  # Get only non-masked values
+            valid_data = numpy_array.compressed()  # get only non-masked values
 
             feature_stats = statistics[field_name]
             feature_stats['count'] += valid_data.size
@@ -113,14 +106,14 @@ if __name__ == '__main__':
     cfg = parse_args(parser.parse_args(), __file__)
 
     mds_path = cfg.paths.mds
-    assert mds_path.exists(), f'MDS path {mds_path} does not exist'
-    for dataset in ['twofox', 'onefox', 'nofox']:
-        assert (mds_path / dataset).exists(), f'MDS dataset {dataset} does not exist in {mds_path}'
-        calculate_dataset_stats(mds_path / dataset)
-        dataset_stats = load_dataset_stats(mds_path / dataset)
-        for feature, stats in dataset_stats.items():
-            logger.debug(f'Stats for feature: {feature}')
-            logger.debug(
-                f'    mean: {stats.mean:.4f}, std: {stats.std:.4f}, '
-                + f'min: {stats.min:.4f}, max: {stats.max:.4f}'
-            )
+    for bucket in ['nofox', 'onefox', 'twofox']:
+        for split in ['train', 'val']:
+            calculate_dataset_stats(mds_path / bucket / split)
+            dataset_stats = load_dataset_stats(mds_path / bucket / split)
+            logger.debug(f'Stats for {bucket}/{split}:')
+            for feature, stats in dataset_stats.items():
+                logger.debug(f'Stats for feature: {feature}')
+                logger.debug(
+                    f'    mean: {stats.mean:.4f}, std: {stats.std:.4f}, '
+                    + f'min: {stats.min:.4f}, max: {stats.max:.4f}'
+                )
