@@ -17,6 +17,7 @@ dependencies = [
     "melee",
     "mosaicml-streaming>=0.13.0",
     "numpy<2.0",
+    "peppi-py",
     "psutil>=7.0.0",
     "randomname>=0.2.1",
     "ruff>=0.11.8",
@@ -32,6 +33,8 @@ build-backend = "hatchling.build"
 
 [tool.uv.sources]
 melee = { git = "https://github.com/vladfi1/libmelee.git", rev = "dev" }
+# NOTE: change this path to where you cloned peppi-py locally
+peppi-py = { path = "/home/jdham/Developer/ext/peppi-py" }
 
 [tool.ruff]
 line-length = 100
