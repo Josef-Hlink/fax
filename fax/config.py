@@ -3,7 +3,7 @@ import tomllib
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser, Namespace
 from glob import glob
 from pathlib import Path
-from typing import Dict, List, Type
+from typing import Dict, List, Type, get_args, get_origin
 
 import attr
 from loguru import logger
@@ -149,10 +149,11 @@ def parse_args(args: Namespace, caller: str) -> CFG:
                 val = cli_dict[cli_key]
             else:
                 val = DEFAULTS.get(section, {}).get(toml_key)
-            # cast to field type
+            # cast to Path object
             if field.type is Path:
                 val = Path(val).expanduser().resolve()
-            elif field.type is List[Path]:  # for zips
+            # for zips: List[Path] with globbing
+            elif get_origin(field.type) is list and get_args(field.type)[0] == Path:
                 # normalize: allow str or list[str|Path]
                 raw_vals = val if isinstance(val, list) else [val]
                 _val = []
@@ -160,6 +161,7 @@ def parse_args(args: Namespace, caller: str) -> CFG:
                     v_path = Path(v).expanduser().resolve()  # works whether str or Path
                     _val.extend([Path(p).expanduser().resolve() for p in glob(v_path.as_posix())])
                 val = _val
+            # int, float, bool (and possibly str but we don't use those)
             elif field.type is not None:
                 val = field.type(val)
             values[field.name] = val
