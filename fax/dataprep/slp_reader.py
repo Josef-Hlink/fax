@@ -60,8 +60,12 @@ def parse_train_replay(
     # stop early if already enough samples of this category
     # we handle this first, as it's the most one most likely to hit
     # (we fill up nofox and onefox rather quickly)
-    p1char = game.start.players[0].character
-    p2char = game.start.players[1].character
+    try:
+        p1char = game.start.players[0].character
+        p2char = game.start.players[1].character
+    except IndexError:
+        logger.debug(f'Game in {file.name} does not have two players')
+        return
     bucket = (p1char == FOX) + (p2char == FOX)  # 0, 1, or 2 foxes
     if bucket_counts[bucket] >= bucket_limit:
         return
