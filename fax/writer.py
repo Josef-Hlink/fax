@@ -3,7 +3,6 @@
 from typing import Dict, Optional
 
 import wandb
-
 from fax.config import CFG
 
 

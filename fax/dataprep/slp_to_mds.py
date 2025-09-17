@@ -8,11 +8,11 @@ Each bucket (nofox, onefox, twofox) is split into train and validation sets
 The resulting MDS datasets can be used for training the agents.
 """
 
-import sys
 import hashlib
 import multiprocessing as mp
 import random
 import struct
+import sys
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional

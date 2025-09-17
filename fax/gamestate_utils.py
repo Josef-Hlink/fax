@@ -16,11 +16,11 @@ import torch
 from tensordict import TensorDict
 
 from fax.constants import (
+    MELEE_ACTION_ID_TO_INDEX,
     MELEE_CHARACTER_ID_TO_INDEX,
     MELEE_CHARACTER_IDS,
     MELEE_STAGE_ID_TO_INDEX,
     MELEE_STAGE_IDS,
-    MELEE_ACTION_ID_TO_INDEX,
 )
 
 FrameData = DefaultDict[str, MutableSequence[Any]]

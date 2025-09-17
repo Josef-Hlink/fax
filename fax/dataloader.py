@@ -9,7 +9,7 @@ from streaming import StreamingDataLoader, StreamingDataset
 from streaming.base.util import clean_stale_shared_memory
 from tensordict import TensorDict
 
-from fax.config import create_parser, parse_args, CFG
+from fax.config import CFG, create_parser, parse_args
 from fax.constants import Player
 from fax.dataprep.stats import load_dataset_stats
 from fax.processing.preprocessor import Preprocessor, convert_ndarray_to_tensordict

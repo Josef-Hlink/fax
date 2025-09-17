@@ -1,13 +1,12 @@
 import sys
 import tomllib
+from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser, Namespace
 from glob import glob
 from pathlib import Path
-from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser, Namespace
 from typing import Dict, List, Type
 
 import attr
 from loguru import logger
-
 
 # project root; this is <proj>/fax/config.py
 _PROJ = Path(__file__).parent.parent.resolve()

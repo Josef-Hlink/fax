@@ -6,14 +6,13 @@ ReplayRecord instances for easy access to relevant fields using peppi_py.
 """
 
 from pathlib import Path
-from typing import Any, Optional, List
+from typing import Any, List, Optional
 
 import attr
 import numpy as np
 import pyarrow as pa
 from loguru import logger
 from peppi_py import Game, read_slippi
-
 
 FOX = 2  # character ID for Fox
 

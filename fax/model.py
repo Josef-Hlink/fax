@@ -8,7 +8,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from tensordict import TensorDict
 
-from fax.config import create_parser, parse_args, CFG
+from fax.config import CFG, create_parser, parse_args
 from fax.constants import (
     ACTION_EMBEDDING_DIM,
     CHARACTER_EMBEDDING_DIM,

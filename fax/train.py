@@ -10,17 +10,17 @@ to demonstrate how all components interact.
 
 import random
 
+import torch
+import torch.nn.functional as F
+from loguru import logger
 from randomname import get_name
 from streaming import StreamingDataLoader
 from tensordict import TensorDict
-import torch
-import torch.nn.functional as F
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
-from loguru import logger
 from tqdm import tqdm
 
-from fax.config import create_parser, parse_args, CFG
+from fax.config import CFG, create_parser, parse_args
 from fax.dataloader import get_dataloaders
 from fax.dataprep.stats import load_dataset_stats
 from fax.model import Model

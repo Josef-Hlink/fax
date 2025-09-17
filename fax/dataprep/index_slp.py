@@ -8,8 +8,8 @@ This is a prerequisite for converting .slp files into an MDS dataset.
 """
 
 import gzip
-import sys
 import shutil
+import sys
 from pathlib import Path
 from zipfile import ZipFile
 
