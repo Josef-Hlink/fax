@@ -106,8 +106,8 @@ You will need to burn your physical SSBM disk to build an .iso file for any of t
 The data used is gathered from three zipped archives of ranked netplay replays shared with me by, again, vladfi1 aka xpilot.
 Each of these archives contains \~130k high-quality\* .slp replays, totalling \~400k replays at \~300GB zipped.
 
-For my experiments I only need 16.384 games per agent, so I iterate over the zipped archives directly, unzipping and parsing on-the-fly, until all I have enough replays for each agent.
-This way we end up only keeping \~180GB of unzipped .slp files that we can then turn into \~40GB of zstd-compressed .mds files. <!-- TODO: verify -->
+For my experiments I only needed 18.431 (16.384 training + 2.048 validation) games per bucket, so I iterate over the zipped archives directly, unzipping and parsing on-the-fly, until all I have enough replays for each bucket.
+This way we end up only keeping \~200GB of unzipped .slp files that we can then turn into \~12GB of zstd-compressed .mds files.
 In order for the agent to train, it will need to unpack them, but by that time you can just delete the original .slp files again.
 
 #### Full data prep pipeline
@@ -117,16 +117,19 @@ Note that I do not mention any paths or CLI arguments to the `uv run` commands b
 1. Find the links to the desired ranked archives from [vladfi1's dropbox](https://www.dropbox.com/scl/fo/r9qremhl811h6vl6kadfy/AJo-dt9-WC47Qm-s2eRlh9U?rlkey=jn88morgmcy1f1qvc030z5rrd&e=1&st=c6kexo8v&dl=0).
     I pulled the first three.
 2. Download them with wget (or any other download manager).
-    I ran three instances of wget in parallel (`wget --show-progress -O ./ranked-anonymized-{1,2,3}.zip <link to archive>`), as each download took about an hour to complete with very connectivity.
+    I ran three instances of wget in parallel (`wget --show-progress -O ./ranked-anonymized-{1,2,3}.zip <link to archive>`), as each download took about an hour to complete with very decent connectivity.
 3. Run `uv run fax/dataprep/index_slp.py` to index the replays into an sqlite database and put the extracted .slp files into their respective buckets.
-    This may also take quite some time, an hour or two, depending on your CPU.
+    This may also take quite some time, for me it took about 2h30m.
+    I've got (the relevant parts of) my hardware setup listed at the bottom of this README, if you're curious.
 4. Delete the archives; we don't need them anymore, but we do need the disk space for the next steps.
 5. Run `uv run fax/dataprep/slp_to_mds.py` to convert the .slp files into zstd-compressed MDS shards.
     These shards take up relatively little space, but will be unpacked in the next step.
-6. Delete the raw .slp files; this frees up another \~180GB of space.
+    This step took me a little over 2 hours, with some pretty aggressive multithreading (16 workers).
+6. Delete the raw .slp files; this frees up another \~200GB of space.
 7. Run `uv run fax/dataprep/stats.py` to calculate the statistics for each of the input features in the datasets.
     These stats are needed for input normalization during training.
     Note that this script will unpack the .mds files, so make sure you have enough disk space; \~20x the size of the compressed sets should be safe.
+    The stats calculation (including unpacking) cost me just under one hour.
 
 \* _high-quality in the sense that the replays are from ranked netplay matches (diamond+, so the players are at least decent), and fox is well-represented in the dataset.
 However; not all files were usable (corrupted files, unfinished games, etc.).
@@ -136,3 +139,22 @@ Luckily we have plenty of data to work with, so I could afford to be picky._
 
 Once you have your data ready, you can start training the agents.
 TODO: write more about training here.
+
+### Evaluation
+
+TODO: write more about evaluation here.
+
+### Closing notes
+
+If you have any questions or suggestions, please don't hesitate to open an issue or a PR.
+The best way to reach me is probably via discord (@jorg0mel).
+Due to some hardware limitation, I could not realize all the experiments I had intially planned on doing.
+In the future, I would like to upgrade my PC or look into some cloud solutions, but that's for another day.
+
+Here are the relevant specs of the setup I was able to run this project on:
+
+- CPU: Intel i7-12700K (8P+4E/20T)
+- GPU: NVIDIA GeForce RTX 3080Ti (12GB VRAM/10240 CUDA cores)
+- RAM: 16GB DDR4 (3600MHz)
+- Storage: 1TB gen4 NVMe SSD + 500GB gen3 NVMe SSD
+- OS: Ubuntu 22.04.5 LTS
