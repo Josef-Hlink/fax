@@ -52,7 +52,7 @@ def calculate_dataset_stats(path: Path) -> None:
     Returns:
         None, saves stats to stats.json in the given directory (alongside index.json).
     """
-    dataset = StreamingDataset(streams=[Stream(local=path.as_posix())])
+    dataset = StreamingDataset(streams=[Stream(local=path.as_posix())], shuffle=False, batch_size=1)
     statistics = {}
     logger.info(f'Starting statistics calculation for dataset at {path}')
 
