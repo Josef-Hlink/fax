@@ -30,9 +30,12 @@ def process_zip_arch(arch_file: Path, out_dir: Path, db_path: Path, bucket_limit
         db_path: Path to the SQLite database file.
         bucket_limit: Maximum number of files per bucket.
     """
-    if (tmp := out_dir / 'tmp').exists():
+    # make a temporary directory for extraction right next to archive
+    # so we're sure it's on the same disk
+    if (tmp := arch_file.parent / 'tmp').exists():
         shutil.rmtree(tmp)
     tmp.mkdir(parents=True, exist_ok=True)
+    # make sure output directories exist
     dirs = tuple(Path(out_dir) / bucket for bucket in ['nofox', 'onefox', 'twofox'])
     for d in dirs:
         d.mkdir(parents=True, exist_ok=True)
