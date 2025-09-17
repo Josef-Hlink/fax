@@ -1687,14 +1687,12 @@ name = "peppi-py"
 source = { directory = "../../ext/peppi-py" }
 dependencies = [
     { name = "inflection" },
-    { name = "maturin" },
     { name = "pyarrow" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "inflection", specifier = "~=0.5" },
-    { name = "maturin", specifier = ">=1.9.4" },
     { name = "pyarrow", specifier = "~=21.0" },
 ]
 
