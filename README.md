@@ -119,10 +119,12 @@ Note that I do not mention any paths or CLI arguments to the `uv run` commands b
 2. Download them with wget (or any other download manager).
     I ran three instances of wget in parallel (`wget --show-progress -O ./ranked-anonymized-{1,2,3}.zip <link to archive>`), as each download took about an hour to complete with very connectivity.
 3. Run `uv run fax/dataprep/index_slp.py` to index the replays into an sqlite database and put the extracted .slp files into their respective buckets.
+    This may also take quite some time, an hour or two, depending on your CPU.
 4. Delete the archives; we don't need them anymore, but we do need the disk space for the next steps.
 5. Run `uv run fax/dataprep/slp_to_mds.py` to convert the .slp files into zstd-compressed MDS shards.
     These shards take up relatively little space, but will be unpacked in the next step.
-6. Run `uv run fax/dataprep/stats.py` to calculate the statistics for each of the input features in the datasets.
+6. Delete the raw .slp files; this frees up another \~180GB of space.
+7. Run `uv run fax/dataprep/stats.py` to calculate the statistics for each of the input features in the datasets.
     These stats are needed for input normalization during training.
     Note that this script will unpack the .mds files, so make sure you have enough disk space; \~20x the size of the compressed sets should be safe.
 
