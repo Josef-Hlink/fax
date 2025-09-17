@@ -153,10 +153,13 @@ def parse_args(args: Namespace, caller: str) -> CFG:
             # cast to field type
             if field.type is Path:
                 val = Path(val).expanduser().resolve()
-            elif field.type is List[Path]:
+            elif field.type is List[Path]:  # for zips
+                # normalize: allow str or list[str|Path]
+                raw_vals = val if isinstance(val, list) else [val]
                 _val = []
-                for v in val:
-                    _val.extend([Path(p).expanduser().resolve() for p in glob(v.as_posix())])
+                for v in raw_vals:
+                    v_path = Path(v).expanduser().resolve()  # works whether str or Path
+                    _val.extend([Path(p).expanduser().resolve() for p in glob(v_path.as_posix())])
                 val = _val
             elif field.type is not None:
                 val = field.type(val)
