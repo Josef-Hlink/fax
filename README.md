@@ -106,7 +106,7 @@ You will need to burn your physical SSBM disk to build an .iso file for any of t
 The data used is gathered from three zipped archives of ranked netplay replays shared with me by, again, vladfi1 aka xpilot.
 Each of these archives contains \~130k high-quality\* .slp replays, totalling \~400k replays at \~300GB zipped.
 
-For my experiments I only needed 18.431 (16.384 training + 2.048 validation) games per bucket, so I iterate over the zipped archives directly, unzipping and parsing on-the-fly, until all I have enough replays for each bucket.
+For my experiments I only needed 18.432 (16.384 training + 2.048 validation) games per bucket, so I iterate over the zipped archives directly, unzipping and parsing on-the-fly, until all I have enough replays for each bucket.
 This way we end up only keeping \~200GB of unzipped .slp files that we can then turn into \~12GB of zstd-compressed .mds files.
 In order for the agent to train, it will need to unpack them, but by that time you can just delete the original .slp files again.
 
