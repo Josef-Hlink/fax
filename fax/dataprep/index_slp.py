@@ -92,7 +92,11 @@ def maybe_gunzip(path: Path) -> Path:
 
 
 if __name__ == '__main__':
-    exposed_args = {'PATHS': 'zips slp sql', 'TRAINING': 'n-samples', 'BASE': 'debug'}
+    exposed_args = {
+        'PATHS': 'zips slp sql',
+        'TRAINING': 'n-samples n-val-samples',
+        'BASE': 'debug',
+    }
     parser = create_parser(exposed_args)
     cfg = parse_args(parser.parse_args(), __file__)
 
@@ -108,7 +112,7 @@ if __name__ == '__main__':
             arch_file,
             out_dir=cfg.paths.slp,
             db_path=cfg.paths.sql,
-            bucket_limit=cfg.training.n_samples,
+            bucket_limit=cfg.training.n_samples + cfg.training.n_val_samples,
         )
 
     logger.info('All done! You can now proceed to convert the .slp files into MDS format.')

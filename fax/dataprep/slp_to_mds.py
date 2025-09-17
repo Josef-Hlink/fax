@@ -3,7 +3,8 @@
 
 """
 This script converts a directory of (bucketed) .slp files into 3 MDS datasets.
-Each bucket (nofox, onefox, twofox) is split into train and validation sets (95%/5%).
+Each bucket (nofox, onefox, twofox) is split into train and validation sets
+    based on how many training samples are specified.
 The resulting MDS datasets can be used for training the agents.
 """
 
@@ -28,7 +29,7 @@ from fax.gamestate_utils import FrameData, extract_and_append_gamestate_inplace
 from fax.schema import MDS_DTYPE_STR_BY_COLUMN, NP_TYPE_BY_COLUMN
 
 
-def slp_to_mds(slp_dir: Path, mds_dir: Path) -> None:
+def slp_to_mds(slp_dir: Path, mds_dir: Path, split_idx: int) -> None:
     """Convert a directory of .slp files into an MDS dataset.
     Args:
         slp_dir: Directory containing .slp files to convert.
@@ -37,7 +38,7 @@ def slp_to_mds(slp_dir: Path, mds_dir: Path) -> None:
     for bucket in ['nofox', 'onefox', 'twofox']:
         files = list((slp_dir / bucket).glob('*.slp'))
         random.shuffle(files)
-        splits = split_train_val(files, split=0.95)
+        splits = split_train_val(files, split_idx)
         for split, data in splits.items():
             split_output_dir = mds_dir / bucket / split
             split_output_dir.mkdir(parents=True, exist_ok=True)
@@ -51,9 +52,8 @@ def hash_to_int32(data: str) -> int:
     return int32_value
 
 
-def split_train_val(input_paths: List[Path], split: float = 0.95) -> Dict[str, List[Path]]:
+def split_train_val(input_paths: List[Path], split_idx: int) -> Dict[str, List[Path]]:
     """Split input paths into train and validation sets."""
-    split_idx = int(len(input_paths) * split)
     return {'train': input_paths[:split_idx], 'val': input_paths[split_idx:]}
 
 
@@ -143,7 +143,7 @@ def process_replays(replay_paths: list[Path], mds_dir: Path) -> None:
 
 
 if __name__ == '__main__':
-    exposed_args = {'PATHS': 'slp mds', 'BASE': 'seed debug'}
+    exposed_args = {'PATHS': 'slp mds', 'TRAINING': 'n-samples', 'BASE': 'seed debug'}
     parser = create_parser(exposed_args)
     cfg = parse_args(parser.parse_args(), __file__)
 
@@ -159,4 +159,4 @@ if __name__ == '__main__':
 
     random.seed(cfg.base.seed)
 
-    slp_to_mds(slp_dir, mds_dir)
+    slp_to_mds(slp_dir, mds_dir, split_idx=cfg.training.n_samples)
