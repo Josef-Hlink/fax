@@ -18,7 +18,7 @@ def main(emulator_path: Path, replay_dir: Path, iso_path: Path):
         player='p1',
         emulator_path=emulator_path,
         replay_dir=replay_dir,
-        opponent_cpu_level=0,
+        opponent_cpu_level=9,
         matchup=Matchup('BATTLEFIELD', 'FOX', 'FOX'),
         debug=True,
     )
@@ -27,15 +27,39 @@ def main(emulator_path: Path, replay_dir: Path, iso_path: Path):
     gs = next(gs_generator)
 
     i = 0
-    while gs is not None:
-        td = extract_eval_gamestate_as_tensordict(gs)
-        i += 1
-        logger.debug(
-            f'>> {i}, p1: ({float(td["p1_position_x"]):.2f}, {float(td["p1_position_y"]):.2f})'
-            + f' p2: ({float(td["p2_position_x"]):.2f}, {float(td["p2_position_y"]):.2f})'
-        )
-        logger.info(f'   p1 stocks: {td["p1_stock"].item()}, p2 stocks: {td["p2_stock"].item()}')
-        gs = gs_generator.send((generate_random_inputs(), generate_random_inputs()))
+    game_ended = False
+    while True:
+        try:
+            if game_ended:
+                # hacky way to tell the emulator to close when the game ends
+                raise Exception('Game ended, exiting loop')
+            td = extract_eval_gamestate_as_tensordict(gs)
+            i += 1
+            if i % 600 == 0:  # log stocks every 10 in-game seconds (600 frames)
+                logger.debug(f'f{i}: {(td["p1_stock"].item()), (td["p2_stock"].item())}')
+            if td['p1_stock'].item() == 0 or td['p2_stock'].item() == 0:
+                game_ended = True
+                logger.info(f'Game ended at frame {i}')
+            gs = gs_generator.send((generate_random_inputs(), None))
+        except Exception:
+            logger.error(f'Emulator closed successfully')
+            break
+
+
+empty_inputs = {
+    'main_stick': (0.5, 0.5),
+    'c_stick': (0.5, 0.5),
+    'shoulder': 0.0,
+    'buttons': {
+        'BUTTON_A': 0,
+        'BUTTON_B': 0,
+        'BUTTON_X': 0,
+        'BUTTON_Y': 0,
+        'BUTTON_Z': 0,
+        'BUTTON_L': 0,
+        'BUTTON_R': 0,
+    },
+}
 
 
 def generate_random_inputs():
@@ -44,7 +68,7 @@ def generate_random_inputs():
         'c_stick': (random.random(), random.random()),
         'shoulder': 0,
         'buttons': {
-            'BUTTON_A': random.randint(0, 1),
+            'BUTTON_A': 0.0,
             'BUTTON_B': random.randint(0, 1),
             'BUTTON_X': random.randint(0, 1),
             'BUTTON_Y': random.randint(0, 1),

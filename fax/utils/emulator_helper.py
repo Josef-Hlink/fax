@@ -370,10 +370,7 @@ class EmulatorManager:
             sys.exit(-1)
         logger.debug('Console connected')
 
-        # Plug our controller in
-        #   Due to how named pipes work, this has to come AFTER running dolphin
-        #   NOTE: If you're loading a movie file, don't connect the controller,
-        #   dolphin will hang waiting for input and never receive it
+        # connect controllers
         logger.debug('Connecting controller 1 to console...')
         if not self.ego_controller.connect():
             logger.debug('ERROR: Failed to connect the controller.')
@@ -386,10 +383,10 @@ class EmulatorManager:
         logger.debug('Controller 2 connected')
 
         i = 0
-        match_started = False
 
-        # Wrap console manager inside a thread for timeouts
-        # Important that console manager context goes second to gracefully handle keyboard interrupts, timeouts, and all other exceptions
+        # this whole double with block is to ensure clean shutdown of the console and controller
+        # i've battled with this for days and this is the only way i've found that works
+        # reliable enough...
         with (
             concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor,
             console_manager(console=self.console, console_logger=self.console_logger),
@@ -401,9 +398,7 @@ class EmulatorManager:
                 # wrap `console.step()` in a thread with timeout
                 future = executor.submit(self.console.step)
                 try:
-                    step_start = time.perf_counter()
                     gamestate = future.result(timeout=self.console_timeout)
-                    step_time = time.perf_counter() - step_start
                 except concurrent.futures.TimeoutError:
                     logger.error('console.step() timed out')
                     raise
@@ -412,40 +407,19 @@ class EmulatorManager:
                     logger.debug('Gamestate is None')
                     continue
 
-                if self.console.processingtime * 1000 > self.latency_warning_threshold:
-                    logger.debug(
-                        'Last frame took '
-                        + str(self.console.processingtime * 1000)
-                        + 'ms to process.'
-                    )
-
                 if gamestate.menu_state not in [melee.Menu.IN_GAME, melee.Menu.SUDDEN_DEATH]:
-                    if match_started:
-                        logger.debug('Match ended')
-                        break
                     self.menu_helper.select_character_and_stage(gamestate)
                 else:
-                    if not match_started:
-                        match_started = True
-                        logger.debug('Match started')
-
-                    # Yield gamestate and receive controller inputs
+                    # yield gamestate and receive controller inputs
                     controller_inputs = yield gamestate
                     if controller_inputs is None:
                         logger.error('Controller inputs are None')
                     else:
                         ego_controller_inputs, opponent_controller_inputs = controller_inputs
-                        send_start = time.perf_counter()
                         send_controller_inputs(self.ego_controller, ego_controller_inputs)
                         if opponent_controller_inputs is not None:
                             send_controller_inputs(
                                 self.opponent_controller, opponent_controller_inputs
-                            )
-                        send_time = time.perf_counter() - send_start
-
-                        if i % 60 == 0:
-                            logger.debug(
-                                f'Console.step() time: {step_time * 1000:.2f}ms, controller send time: {send_time * 1000:.2f}ms'
                             )
 
                     self.episode_stats.update(gamestate)
