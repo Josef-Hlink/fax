@@ -62,7 +62,7 @@ def train(cfg: CFG) -> None:
 
     # finetuning phase
     logger.info('Initial training regiment completed. Starting finetuning phase...')
-    train_loader, val_loader = get_dataloaders(cfg, 'twofox')
+    train_loader, val_loader = get_dataloaders(cfg, 'FvF')
     trainer.optimizer = AdamW(
         model.parameters(),
         lr=cfg.optim.lr * cfg.exp.finetune_lr_frac,
