@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
 import random
 from typing import Any, Optional, Sequence, Tuple
 
@@ -10,8 +9,10 @@ from streaming.base.util import clean_stale_shared_memory
 from tensordict import TensorDict
 
 from fax.config import CFG, create_parser, parse_args
-from fax.constants import Player
+from fax.constants import MATCHUP_TO_BUCKET, Player
 from fax.processing.preprocessor import Preprocessor, convert_ndarray_to_tensordict
+
+FOX = 2  # character ID for Fox
 
 
 def collate_tensordicts(batch: Sequence[TensorDict]) -> TensorDict:
@@ -32,7 +33,7 @@ class FAXStreamingDataset(StreamingDataset):
     6. Returns training-ready input/target pairs
     """
 
-    def __init__(self, cfg: CFG, bucket: Path, split: Optional[str] = None):
+    def __init__(self, cfg: CFG, matchup: str, split: Optional[str] = None):
         """Fax streaming dataset constructor."""
 
         if split == 'train':
@@ -41,6 +42,9 @@ class FAXStreamingDataset(StreamingDataset):
             n_samples = cfg.training.n_val_samples
         else:
             raise ValueError(f"Invalid split '{split}'. Must be 'train', 'val', or None.")
+
+        self.matchup = matchup  # this will be used in __getitem__
+        bucket = cfg.paths.mds / MATCHUP_TO_BUCKET[matchup]
         super().__init__(
             local=bucket.expanduser().as_posix(),
             split=split,
@@ -53,27 +57,32 @@ class FAXStreamingDataset(StreamingDataset):
         self.preprocessor = Preprocessor(cfg)
 
     def __getitem__(self, idx: Any) -> TensorDict:
-        # Get raw episode data from MDS
+        # get raw episode data from MDS
         episode_data = super().__getitem__(idx)
 
-        # Convert numpy arrays to TensorDict
+        # convert numpy arrays to TensorDict
         episode_td = convert_ndarray_to_tensordict(episode_data)
 
-        # Sample a subsequence for training
+        # sample a subsequence for training
         sample_td = self.preprocessor.sample_from_episode(episode_td)
 
-        # Randomly choose ego player (p1 or p2)
-        ego: Player = random.choice(['p1', 'p2'])
+        # determine ego player
+        if self.matchup in ['FvF', 'XvX']:
+            ego: Player = random.choice(['p1', 'p2'])
+        elif self.matchup == 'FvX':
+            ego: Player = 'p1' if sample_td['p1_character'][0].item() == FOX else 'p2'
+        else:  # matchup == 'XvF'
+            ego: Player = 'p1' if sample_td['p2_character'][0].item() == FOX else 'p2'
 
-        # Preprocess inputs and targets
+        # preprocess inputs and targets
         inputs_td = self.preprocessor.preprocess_inputs(sample_td, ego)
         targets_td = self.preprocessor.preprocess_targets(sample_td, ego)
 
-        # Apply temporal offsets
+        # apply temporal offsets
         inputs_td = self.preprocessor.offset_inputs(inputs_td)
         targets_td = self.preprocessor.offset_targets(targets_td)
 
-        # Combine into single TensorDict for training
+        # combine into single TensorDict for training
         payload: dict[str, Any] = {
             'inputs': inputs_td,
             'targets': targets_td,
@@ -81,13 +90,13 @@ class FAXStreamingDataset(StreamingDataset):
         return TensorDict(payload, batch_size=())
 
 
-def get_dataloaders(cfg: CFG, bucket: Path) -> Tuple[StreamingDataLoader, StreamingDataLoader]:
+def get_dataloaders(cfg: CFG, matchup: str) -> Tuple[StreamingDataLoader, StreamingDataLoader]:
     """
     Create train and validation dataloaders.
 
     Args:
         cfg: Training configuration containing batch size, num workers, etc.
-        bucket: Path to the MDS bucket to load data from.
+        matchup: Matchup string to determine which MDS bucket to use.
 
     Returns:
         Tuple of (train_loader, val_loader, test_loader)
@@ -97,8 +106,8 @@ def get_dataloaders(cfg: CFG, bucket: Path) -> Tuple[StreamingDataLoader, Stream
     clean_stale_shared_memory()
 
     # create datasets
-    train_dataset = FAXStreamingDataset(cfg, bucket, split='train')
-    val_dataset = FAXStreamingDataset(cfg, bucket, split='val')
+    train_dataset = FAXStreamingDataset(cfg, matchup, split='train')
+    val_dataset = FAXStreamingDataset(cfg, matchup, split='val')
 
     # create dataloaders
     train_loader = StreamingDataLoader(
@@ -128,7 +137,7 @@ if __name__ == '__main__':
     exposed_args = {'PATHS': 'mds', 'TRAINING': 'batch-size', 'MODEL': 'seq-len', 'EXP': 'matchup'}
     parser = create_parser(exposed_args)
     cfg = parse_args(parser.parse_args(), __file__)
-    train_loader, val_loader = get_dataloaders(cfg=cfg, bucket=cfg.paths.mds / cfg.exp.matchup)
+    train_loader, val_loader = get_dataloaders(cfg=cfg, matchup=cfg.exp.matchup)
 
     for i, batch in enumerate(train_loader):
         print(f'Batch #{i + 1}:')

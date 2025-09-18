@@ -21,7 +21,6 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 from tqdm import tqdm
 
 from fax.config import CFG, create_parser, parse_args
-from fax.constants import MATCHUP_TO_BUCKET
 from fax.dataloader import get_dataloaders
 from fax.model import Model
 from fax.processing.preprocessor import Preprocessor
@@ -36,9 +35,7 @@ def train(cfg: CFG) -> None:
     logger.info(f'Model has {sum(p.numel() for p in model.parameters()):,} parameters.')
 
     # get dataloaders
-    train_loader, val_loader = get_dataloaders(
-        cfg, bucket=cfg.paths.mds / MATCHUP_TO_BUCKET[cfg.exp.matchup]
-    )
+    train_loader, val_loader = get_dataloaders(cfg, cfg.exp.matchup)
 
     # initialize trainer
     trainer = Trainer(cfg, model)
@@ -65,7 +62,7 @@ def train(cfg: CFG) -> None:
 
     # finetuning phase
     logger.info('Initial training regiment completed. Starting finetuning phase...')
-    train_loader, val_loader = get_dataloaders(cfg, bucket=cfg.paths.mds / 'twofox')
+    train_loader, val_loader = get_dataloaders(cfg, 'twofox')
     trainer.optimizer = AdamW(
         model.parameters(),
         lr=cfg.optim.lr * cfg.exp.finetune_lr_frac,
