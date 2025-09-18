@@ -35,22 +35,29 @@ def train(cfg: CFG) -> None:
     logger.info(f'Model has {sum(p.numel() for p in model.parameters()):,} parameters.')
 
     # get dataloaders
-    train_loader, val_loader = get_dataloaders(cfg, cfg.exp.matchup)
+    own_train_loader, own_val_loader = get_dataloaders(cfg, cfg.exp.matchup)
+    fvf_train_loader, fvf_val_loader = get_dataloaders(cfg, 'FvF')
 
     # initialize trainer
     trainer = Trainer(cfg, model)
 
     best_val_loss = float('inf')
     for epoch in range(1, cfg.training.n_epochs + 1):
-        train_loss = trainer.train_epoch(train_loader, epoch, cfg.training.n_epochs)
-        val_loss = trainer.validate(val_loader)
+        train_loss = trainer.train_epoch(own_train_loader, epoch, cfg.training.n_epochs)
+        own_val_loss = trainer.validate(own_val_loader)
+        fvf_val_loss = trainer.validate(fvf_val_loader)
 
-        logger.info(f'Epoch {epoch}: Train Loss = {train_loss:.4f}, Val Loss = {val_loss:.4f}')
-        trainer.writer.log({'val/loss': val_loss}, None, commit=True)
+        logger.info(
+            f'Epoch {epoch}: tl = {train_loss:.4f}, '
+            + f'own vl = {own_val_loss:.4f}, '
+            + f'FvF vl = {fvf_val_loss:.4f}'
+        )
+        trainer.writer.log({'val/own_loss': own_val_loss}, None, commit=False)
+        trainer.writer.log({'val/fvf_loss': fvf_val_loss}, None, commit=False)
 
         # save best model
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
+        if own_val_loss < best_val_loss:
+            best_val_loss = own_val_loss
             torch.save(model.state_dict(), cfg.paths.runs / trainer.run_name / 'best_model.pth')
             logger.info(f'Saved new best model with Val Loss = {best_val_loss:.4f}')
 
@@ -62,7 +69,6 @@ def train(cfg: CFG) -> None:
 
     # finetuning phase
     logger.info('Initial training regiment completed. Starting finetuning phase...')
-    train_loader, val_loader = get_dataloaders(cfg, 'FvF')
     trainer.optimizer = AdamW(
         model.parameters(),
         lr=cfg.optim.lr * cfg.exp.finetune_lr_frac,
@@ -73,17 +79,15 @@ def train(cfg: CFG) -> None:
     trainer.scheduler = CosineAnnealingLR(trainer.optimizer, T_max=total_steps, eta_min=1e-6)
     best_val_loss = float('inf')
     for epoch in range(1, cfg.exp.n_finetune_epochs + 1):
-        train_loss = trainer.train_epoch(train_loader, epoch, cfg.exp.n_finetune_epochs)
-        val_loss = trainer.validate(val_loader)
+        train_loss = trainer.train_epoch(fvf_train_loader, epoch, cfg.exp.n_finetune_epochs)
+        fvf_val_loss = trainer.validate(fvf_val_loader)
 
-        logger.info(
-            f'Finetune Epoch {epoch}: Train Loss = {train_loss:.4f}, Val Loss = {val_loss:.4f}'
-        )
-        trainer.writer.log({'val/loss': val_loss}, None, commit=True)
+        logger.info(f'Finetune epoch {epoch}: tl = {train_loss:.4f}, fvf vl = {fvf_val_loss:.4f}')
+        trainer.writer.log({'val/fvf_loss': fvf_val_loss}, None, commit=False)
 
         # save best model
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
+        if fvf_val_loss < best_val_loss:
+            best_val_loss = fvf_val_loss
             torch.save(
                 model.state_dict(), cfg.paths.runs / trainer.run_name / 'best_model_finetuned.pth'
             )
@@ -128,7 +132,7 @@ class Trainer(torch.nn.Module):
         self.model.train()
         total_loss = 0.0
 
-        for batch in (pbar := tqdm(train_loader, desc=f'epoch {epoch}/{n_epochs}')):
+        for batch in tqdm(train_loader, desc=f'epoch {epoch}/{n_epochs}'):
             inputs = batch['inputs'].to(self.device)
             targets = batch['targets'].to(self.device)
 
@@ -142,7 +146,6 @@ class Trainer(torch.nn.Module):
             total_loss += loss.item()
             self.writer.log({'train/loss': loss.item()}, None, commit=True)
             self.writer.log({'train/lr': self.scheduler.get_last_lr()[0]}, None, commit=False)
-            pbar.set_postfix({'loss': loss.item()})
 
         return total_loss / len(train_loader)
 
