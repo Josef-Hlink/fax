@@ -211,4 +211,5 @@ if __name__ == '__main__':
     }
     parser = create_parser(exposed_args)
     cfg = parse_args(parser.parse_args(), __file__)
+    assert cfg.exp.matchup is not None, 'Matchup must be specified for training.'
     train(cfg)

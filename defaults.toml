@@ -33,6 +33,6 @@ wd = 1e-2
 b1 = 0.9
 b2 = 0.999
 [EXP]
-name = "FvF"
+matchup = "FvF"
 n-finetune-epochs = 10
 finetune-lr-frac = 0.5

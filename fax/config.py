@@ -83,7 +83,7 @@ class ExpCFG:
     def __attrs_post_init__(self):
         """Validate that matchup is valid."""
         allowed_matchups = ['FvF', 'FvX', 'XvF', 'XvX']
-        if self.matchup is None or self.matchup not in allowed_matchups:
+        if self.matchup not in allowed_matchups:
             raise ValueError(f'matchup must be one of {allowed_matchups}, got {self.matchup}')
 
 
@@ -193,7 +193,7 @@ def parse_args(args: Namespace, caller: str) -> CFG:
         optim=build('OPTIM', OptimCFG),
         exp=build('EXP', ExpCFG),
     )
-    setup_logger(cfg.paths.logs / Path(caller).stem, debug=cfg.base.debug)
+    setup_logger(Path(f'{cfg.paths.logs / Path(caller).stem}.log'), debug=cfg.base.debug)
     for section_name, section in cfg.__dict__.items():
         for key, value in section.__dict__.items():
             logger.debug(f'Config {section_name}.{key} = {value}')
