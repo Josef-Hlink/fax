@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import random
 from typing import Any, Optional, Sequence, Tuple
 
 import torch
@@ -67,12 +66,12 @@ class FAXStreamingDataset(StreamingDataset):
         sample_td = self.preprocessor.sample_from_episode(episode_td)
 
         # determine ego player
-        if self.matchup in ['FvF', 'XvX']:
-            ego: Player = random.choice(['p1', 'p2'])
+        if self.matchup == 'FvF' or self.matchup == 'XvX':
+            ego: Player = 'p1'  # arbitrary since matchup is symmetric
         elif self.matchup == 'FvX':
-            ego: Player = 'p1' if sample_td['p1_character'][0].item() == FOX else 'p2'
+            ego: Player = 'p1' if sample_td['p1_character'][0] == FOX else 'p2'
         else:  # matchup == 'XvF'
-            ego: Player = 'p1' if sample_td['p2_character'][0].item() == FOX else 'p2'
+            ego: Player = 'p1' if sample_td['p2_character'][0] == FOX else 'p2'
 
         # preprocess inputs and targets
         inputs_td = self.preprocessor.preprocess_inputs(sample_td, ego)
