@@ -12,6 +12,9 @@ wheels/
 # loguru
 logs
 
+# melee's logger
+Logs
+
 # data
 data
 
