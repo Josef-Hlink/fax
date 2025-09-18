@@ -45,7 +45,7 @@ def train(cfg: CFG) -> None:
 
     best_val_loss = float('inf')
     for epoch in range(1, cfg.training.n_epochs + 1):
-        train_loss = trainer.train_epoch(train_loader, epoch)
+        train_loss = trainer.train_epoch(train_loader, epoch, cfg.training.n_epochs)
         val_loss = trainer.validate(val_loader)
 
         logger.info(f'Epoch {epoch}: Train Loss = {train_loss:.4f}, Val Loss = {val_loss:.4f}')
@@ -76,7 +76,7 @@ def train(cfg: CFG) -> None:
     trainer.scheduler = CosineAnnealingLR(trainer.optimizer, T_max=total_steps, eta_min=1e-6)
     best_val_loss = float('inf')
     for epoch in range(1, cfg.exp.n_finetune_epochs + 1):
-        train_loss = trainer.train_epoch(train_loader, epoch)
+        train_loss = trainer.train_epoch(train_loader, epoch, cfg.exp.n_finetune_epochs)
         val_loss = trainer.validate(val_loader)
 
         logger.info(
