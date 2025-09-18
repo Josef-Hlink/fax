@@ -22,21 +22,20 @@ from tqdm import tqdm
 
 from fax.config import CFG, create_parser, parse_args
 from fax.dataloader import get_dataloaders
-from fax.dataprep.stats import load_dataset_stats
 from fax.model import Model
 from fax.processing.preprocessor import Preprocessor
 from fax.writer import DummyWriter, WandbWriter
 
 
-def train(cfg: CFG, dataset_name: str) -> None:
+def train(cfg: CFG) -> None:
     logger.info('Starting training...')
 
-    preprocessor = Preprocessor(cfg, load_dataset_stats(cfg.paths.mds / dataset_name))
+    preprocessor = Preprocessor(cfg)
     model = Model(preprocessor, cfg)
     logger.info(f'Model has {sum(p.numel() for p in model.parameters()):,} parameters.')
 
     # Get dataloaders
-    train_loader, val_loader, test_loader = get_dataloaders(cfg, dataset_name)
+    train_loader, val_loader = get_dataloaders(cfg)
 
     # Initialize trainer
     trainer = Trainer(cfg, model)
@@ -55,10 +54,6 @@ def train(cfg: CFG, dataset_name: str) -> None:
             torch.save(model.state_dict(), cfg.paths.runs / trainer.run_name / 'best_model.pth')
             logger.info(f'Saved new best model with Val Loss = {best_val_loss:.4f}')
 
-    # Final evaluation on test set
-    test_loss = trainer.validate(test_loader)
-    logger.info(f'Test Loss = {test_loss:.4f}')
-    trainer.writer.log({'test/loss': test_loss}, None, commit=True)
     trainer.writer.finish()
     logger.info('Training complete.')
 
@@ -165,7 +160,8 @@ if __name__ == '__main__':
         'TRAINING': 'batch-size n-epochs n-samples n-val-samples n-dataworkers',
         'MODEL': 'n-layers n-heads seq-len emb-dim dropout gamma',
         'OPTIM': 'lr wd b1 b2',
+        'EXP': 'matchup n-finetune-epochs finetune-lr-factor',
     }
     parser = create_parser(exposed_args)
     cfg = parse_args(parser.parse_args(), __file__)
-    train(cfg, 'onefox')  # TODO: parameterize dataset name
+    train(cfg)

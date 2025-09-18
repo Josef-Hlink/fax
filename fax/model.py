@@ -266,7 +266,7 @@ if __name__ == '__main__':
     }
     parser = create_parser(exposed_args)
     cfg = parse_args(parser.parse_args(), __file__)
-    model = Model(Preprocessor(cfg, load_dataset_stats(cfg.paths.mds / 'onefox')), cfg)
+    model = Model(Preprocessor(cfg), cfg)
 
     B, L = cfg.training.batch_size, cfg.model.seq_len
     # Get the correct dimensions from the input config

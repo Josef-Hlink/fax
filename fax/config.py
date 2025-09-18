@@ -75,12 +75,20 @@ class OptimCFG:
 
 
 @attr.s(auto_attribs=True, frozen=True)
+class ExpCFG:
+    matchup: str
+    n_finetune_epochs: int
+    finetune_lr_frac: float
+
+
+@attr.s(auto_attribs=True, frozen=True)
 class CFG:
     paths: PathsCFG
     base: BaseCFG
     training: TrainingCFG
     model: ModelCFG
     optim: OptimCFG
+    exp: ExpCFG
 
     def to_dict(self) -> dict:
         """Convert the CFG dataclass to a dictionary."""
@@ -90,6 +98,7 @@ class CFG:
             'training': attr.asdict(self.training),
             'model': attr.asdict(self.model),
             'optim': attr.asdict(self.optim),
+            'exp': attr.asdict(self.exp),
         }
 
 
@@ -173,6 +182,7 @@ def parse_args(args: Namespace, caller: str) -> CFG:
         training=build('TRAINING', TrainingCFG),
         model=build('MODEL', ModelCFG),
         optim=build('OPTIM', OptimCFG),
+        exp=build('EXP', ExpCFG),
     )
     setup_logger(cfg.paths.logs / Path(caller).stem, debug=cfg.base.debug)
     for section_name, section in cfg.__dict__.items():
@@ -213,6 +223,7 @@ if __name__ == '__main__':
         'TRAINING': 'batch-size n-epochs n-samples n-val-samples n-dataworkers',
         'MODEL': 'n-layers n-heads seq-len emb-dim dropout gamma',
         'OPTIM': 'lr wd b1 b2',
+        'EXP': 'matchup n-finetune-epochs finetune-lr-frac',
     }
     parser = create_parser(exposed_args)
     args = parser.parse_args()

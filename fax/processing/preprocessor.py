@@ -6,8 +6,8 @@ import torch
 from tensordict import TensorDict
 
 from fax.config import CFG
-from fax.constants import Player, get_opponent
-from fax.dataprep.stats import FeatureStats
+from fax.constants import MATCHUP_TO_BUCKET, Player, get_opponent
+from fax.dataprep.stats import FeatureStats, load_dataset_stats
 
 from .configs import (
     InputConfig,
@@ -34,9 +34,10 @@ class Preprocessor:
     - hidden dim sizes by input embedding head at runtime
     """
 
-    def __init__(self, cfg: CFG, stats: Dict) -> None:
+    def __init__(self, cfg: CFG) -> None:
         self.cfg = cfg
-        self.stats = stats
+        dataset_path = cfg.paths.mds / MATCHUP_TO_BUCKET[cfg.exp.matchup] / 'train'
+        self.stats = load_dataset_stats(dataset_path)
         self.normalization_fn_by_feature_name: Dict[str, Transformation] = {}  # TODO: check used
         self.seq_len = cfg.model.seq_len
 

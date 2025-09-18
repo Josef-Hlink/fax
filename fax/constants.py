@@ -226,3 +226,9 @@ ACTION_EMBEDDING_DIM: int = 32
 ########
 
 NP_MASK_VALUE: Final[int] = (1 << 31) - 1
+MATCHUP_TO_BUCKET: Final[Dict[str, str]] = {
+    'FvF': 'twofox',
+    'FvX': 'onefox',
+    'XvF': 'onefox',
+    'XvX': 'nofox',
+}

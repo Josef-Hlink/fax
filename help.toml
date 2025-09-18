@@ -36,3 +36,7 @@ lr = "Learning rate."  # TODO: refer to docs for these params
 wd = "Weight decay."
 b1 = "Adam optimizer beta1 parameter."
 b2 = "Adam optimizer beta2 parameter."
+[EXP]
+matchup = "Type of data the agent will be trained on. Options are FvF, FvX, XvF, XvX."
+n-finetune-epochs = "Number of finetuning epochs to perform after the main training is complete."
+finetune-lr-frac = "Fraction of the original learning rate to initialize the finetuning learning rate."
