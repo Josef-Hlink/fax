@@ -106,12 +106,15 @@ def create_parser(argnames: Dict[str, str]) -> ArgumentParser:
     """Create and add arguments to an ArgumentParser from a dictionary of argument names and help strings.
 
     Args:
-        argnames: A dictionary where keys are sections (e.g., 'paths', 'base')
+        argnames: A dictionary where keys are sections (e.g., 'PATHS', 'BASE')
             and values are space-separated argument names (e.g., 'data-dir batch-size').
+            You can also expose all args in a section like this: {'MODEL': '*'}.
     Returns: The updated ArgumentParser.
     """
     parser = ArgumentParser(formatter_class=ArgumentDefaultsHelpFormatter)
     for section, names in argnames.items():
+        if names == '*':
+            names = ' '.join(DEFAULTS.get(section, {}).keys())
         for name in names.split():
             arg_name = f'--{name}'
             help_msg = HELP.get(section, {}).get(name, '')
@@ -223,14 +226,12 @@ if __name__ == '__main__':
         'TRAINING': 'batch-size n-epochs n-samples n-val-samples n-dataworkers',
         'MODEL': 'n-layers n-heads seq-len emb-dim dropout gamma',
         'OPTIM': 'lr wd b1 b2',
-        'EXP': 'matchup n-finetune-epochs finetune-lr-frac',
+        'EXP': '*',  # NOTE: this exposes all exp args
     }
     parser = create_parser(exposed_args)
     args = parser.parse_args()
-    config = parse_args(args, caller=__file__)
-    for section_name, section in exposed_args.items():
-        print(f'[{section_name}]')
-        sec = getattr(config, section_name.lower())
-        for key in section.split():
-            print(f'{key}: {getattr(sec, key.replace("-", "_"))}')
-        print()
+    cfg = parse_args(args, caller=__file__)
+    for section, partial_cfg in cfg.__dict__.items():
+        print(f'[{section.upper()}]')
+        for k, v in partial_cfg.__dict__.items():
+            print(f'{k}: {v}')
