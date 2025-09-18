@@ -21,6 +21,7 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 from tqdm import tqdm
 
 from fax.config import CFG, create_parser, parse_args
+from fax.constants import MATCHUP_TO_BUCKET
 from fax.dataloader import get_dataloaders
 from fax.model import Model
 from fax.processing.preprocessor import Preprocessor
@@ -34,10 +35,12 @@ def train(cfg: CFG) -> None:
     model = Model(preprocessor, cfg)
     logger.info(f'Model has {sum(p.numel() for p in model.parameters()):,} parameters.')
 
-    # Get dataloaders
-    train_loader, val_loader = get_dataloaders(cfg)
+    # get dataloaders
+    train_loader, val_loader = get_dataloaders(
+        cfg, bucket=cfg.paths.mds / MATCHUP_TO_BUCKET[cfg.exp.matchup]
+    )
 
-    # Initialize trainer
+    # initialize trainer
     trainer = Trainer(cfg, model)
 
     best_val_loss = float('inf')
@@ -48,14 +51,48 @@ def train(cfg: CFG) -> None:
         logger.info(f'Epoch {epoch}: Train Loss = {train_loss:.4f}, Val Loss = {val_loss:.4f}')
         trainer.writer.log({'val/loss': val_loss}, None, commit=True)
 
-        # Save best model
+        # save best model
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             torch.save(model.state_dict(), cfg.paths.runs / trainer.run_name / 'best_model.pth')
             logger.info(f'Saved new best model with Val Loss = {best_val_loss:.4f}')
 
-    trainer.writer.finish()
-    logger.info('Training complete.')
+    if cfg.exp.n_finetune_epochs == 0:
+        logger.info('No finetuning epochs specified, skipping finetuning.')
+        trainer.writer.finish()
+        logger.info('Training complete.')
+        return
+
+    # finetuning phase
+    logger.info('Initial training regiment completed. Starting finetuning phase...')
+    train_loader, val_loader = get_dataloaders(cfg, bucket=cfg.paths.mds / 'twofox')
+    trainer.optimizer = AdamW(
+        model.parameters(),
+        lr=cfg.optim.lr * cfg.exp.finetune_lr_frac,
+        weight_decay=cfg.optim.wd,
+        betas=(cfg.optim.b1, cfg.optim.b2),
+    )
+    total_steps = cfg.exp.n_finetune_epochs * cfg.training.n_samples // cfg.training.batch_size
+    trainer.scheduler = CosineAnnealingLR(trainer.optimizer, T_max=total_steps, eta_min=1e-6)
+    best_val_loss = float('inf')
+    for epoch in range(1, cfg.exp.n_finetune_epochs + 1):
+        train_loss = trainer.train_epoch(train_loader, epoch)
+        val_loss = trainer.validate(val_loader)
+
+        logger.info(
+            f'Finetune Epoch {epoch}: Train Loss = {train_loss:.4f}, Val Loss = {val_loss:.4f}'
+        )
+        trainer.writer.log({'val/loss': val_loss}, None, commit=True)
+
+        # save best model
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            torch.save(
+                model.state_dict(), cfg.paths.runs / trainer.run_name / 'best_model_finetuned.pth'
+            )
+            logger.info(f'Saved new best finetuned model with Val Loss = {best_val_loss:.4f}')
+
+    return
 
 
 class Trainer(torch.nn.Module):
@@ -82,10 +119,17 @@ class Trainer(torch.nn.Module):
         total_steps = cfg.training.n_epochs * cfg.training.n_samples // cfg.training.batch_size
         self.scheduler = CosineAnnealingLR(self.optimizer, T_max=total_steps, eta_min=1e-6)
 
-    def train_epoch(self, train_loader: StreamingDataLoader, epoch: int) -> float:
+    def train_epoch(self, train_loader: StreamingDataLoader, epoch: int, n_epochs: int) -> float:
+        """Train the model on the provided dataloader for one epoch.
+        Args:
+            train_loader: DataLoader providing training batches.
+            epoch: Current epoch number (1-indexed).
+            n_epochs: Total number of epochs.
+        Returns:
+            Average training loss over the epoch.
+        """
         self.model.train()
         total_loss = 0.0
-        n_epochs = self.cfg.training.n_epochs
 
         for batch in (pbar := tqdm(train_loader, desc=f'epoch {epoch}/{n_epochs}')):
             inputs = batch['inputs'].to(self.device)
@@ -106,6 +150,12 @@ class Trainer(torch.nn.Module):
         return total_loss / len(train_loader)
 
     def validate(self, val_loader: StreamingDataLoader) -> float:
+        """Evaluate the model on the provided validation dataloader.
+        Args:
+            val_loader: DataLoader providing validation batches.
+        Returns:
+            Average validation loss.
+        """
         self.model.eval()
         total_loss = 0.0
 
@@ -160,7 +210,7 @@ if __name__ == '__main__':
         'TRAINING': 'batch-size n-epochs n-samples n-val-samples n-dataworkers',
         'MODEL': 'n-layers n-heads seq-len emb-dim dropout gamma',
         'OPTIM': 'lr wd b1 b2',
-        'EXP': 'matchup n-finetune-epochs finetune-lr-factor',
+        'EXP': 'matchup n-finetune-epochs finetune-lr-frac',
     }
     parser = create_parser(exposed_args)
     cfg = parse_args(parser.parse_args(), __file__)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 import random
 from typing import Any, Optional, Sequence, Tuple
 
@@ -9,8 +10,7 @@ from streaming.base.util import clean_stale_shared_memory
 from tensordict import TensorDict
 
 from fax.config import CFG, create_parser, parse_args
-from fax.constants import MATCHUP_TO_BUCKET, Player
-from fax.dataprep.stats import load_dataset_stats
+from fax.constants import Player
 from fax.processing.preprocessor import Preprocessor, convert_ndarray_to_tensordict
 
 
@@ -32,7 +32,7 @@ class FAXStreamingDataset(StreamingDataset):
     6. Returns training-ready input/target pairs
     """
 
-    def __init__(self, cfg: CFG, split: Optional[str] = None):
+    def __init__(self, cfg: CFG, bucket: Path, split: Optional[str] = None):
         """Fax streaming dataset constructor."""
 
         if split == 'train':
@@ -42,7 +42,7 @@ class FAXStreamingDataset(StreamingDataset):
         else:
             raise ValueError(f"Invalid split '{split}'. Must be 'train', 'val', or None.")
         super().__init__(
-            local=(cfg.paths.mds / MATCHUP_TO_BUCKET[cfg.exp.matchup]).expanduser().as_posix(),
+            local=bucket.expanduser().as_posix(),
             split=split,
             shuffle=True,
             batch_size=cfg.training.batch_size,
@@ -81,25 +81,26 @@ class FAXStreamingDataset(StreamingDataset):
         return TensorDict(payload, batch_size=())
 
 
-def get_dataloaders(cfg: CFG) -> Tuple[StreamingDataLoader, StreamingDataLoader]:
+def get_dataloaders(cfg: CFG, bucket: Path) -> Tuple[StreamingDataLoader, StreamingDataLoader]:
     """
     Create train and validation dataloaders.
 
     Args:
-        cfg: Training configuration containing data directory and batch size
+        cfg: Training configuration containing batch size, num workers, etc.
+        bucket: Path to the MDS bucket to load data from.
 
     Returns:
         Tuple of (train_loader, val_loader, test_loader)
     """
 
-    # Clean stale shared memory
+    # clean stale shared memory
     clean_stale_shared_memory()
 
-    # Create datasets
-    train_dataset = FAXStreamingDataset(cfg=cfg, split='train')
-    val_dataset = FAXStreamingDataset(cfg=cfg, split='val')
+    # create datasets
+    train_dataset = FAXStreamingDataset(cfg, bucket, split='train')
+    val_dataset = FAXStreamingDataset(cfg, bucket, split='val')
 
-    # Create dataloaders
+    # create dataloaders
     train_loader = StreamingDataLoader(
         train_dataset,
         batch_size=cfg.training.batch_size,
@@ -124,10 +125,10 @@ def get_dataloaders(cfg: CFG) -> Tuple[StreamingDataLoader, StreamingDataLoader]
 
 
 if __name__ == '__main__':
-    exposed_args = {'PATHS': 'mds', 'TRAINING': 'batch-size', 'MODEL': 'seq-len', 'EXP': 'name'}
+    exposed_args = {'PATHS': 'mds', 'TRAINING': 'batch-size', 'MODEL': 'seq-len', 'EXP': 'matchup'}
     parser = create_parser(exposed_args)
     cfg = parse_args(parser.parse_args(), __file__)
-    train_loader, val_loader = get_dataloaders(cfg=cfg)
+    train_loader, val_loader = get_dataloaders(cfg=cfg, bucket=cfg.paths.mds / cfg.exp.matchup)
 
     for i, batch in enumerate(train_loader):
         print(f'Batch #{i + 1}:')
@@ -140,7 +141,7 @@ if __name__ == '__main__':
         print(f'  inputs.keys(): {list(inputs.keys())}')
         print(f'  targets.keys(): {list(targets.keys())}')
 
-        # Print shapes of a few key features
+        # print shapes of a few key features
         for key in ['stage', 'ego_character', 'gamestate', 'controller']:
             if key in inputs:
                 print(f'  inputs[{key}].shape: {inputs[key].shape}')
@@ -149,7 +150,7 @@ if __name__ == '__main__':
             if key in targets:
                 print(f'  targets[{key}].shape: {targets[key].shape}')
 
-        if i >= 1:  # Test just 2 batches
+        if i >= 1:  # test just 2 batches
             break
 
     print('Dataloader test completed successfully!')

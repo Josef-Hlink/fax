@@ -80,6 +80,12 @@ class ExpCFG:
     n_finetune_epochs: int
     finetune_lr_frac: float
 
+    def __attrs_post_init__(self):
+        """Validate that matchup is valid."""
+        allowed_matchups = ['FvF', 'FvX', 'XvF', 'XvX']
+        if self.matchup is None or self.matchup not in allowed_matchups:
+            raise ValueError(f'matchup must be one of {allowed_matchups}, got {self.matchup}')
+
 
 @attr.s(auto_attribs=True, frozen=True)
 class CFG:
