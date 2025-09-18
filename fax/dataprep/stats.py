@@ -20,7 +20,7 @@ from streaming import Stream, StreamingDataset
 from tqdm import tqdm
 
 from fax.config import create_parser, parse_args
-from fax.constants import NP_MASK_VALUE
+from fax.utils.constants import NP_MASK_VALUE
 
 
 @attr.s(auto_attribs=True, frozen=True)

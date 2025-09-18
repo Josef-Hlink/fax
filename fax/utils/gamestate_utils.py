@@ -15,7 +15,7 @@ import melee
 import torch
 from tensordict import TensorDict
 
-from fax.constants import (
+from fax.utils.constants import (
     MELEE_ACTION_ID_TO_INDEX,
     MELEE_CHARACTER_ID_TO_INDEX,
     MELEE_CHARACTER_IDS,
@@ -29,7 +29,7 @@ FrameData = DefaultDict[str, MutableSequence[Any]]
 def extract_eval_gamestate_as_tensordict(gamestate: melee.GameState) -> TensorDict:
     frame_data: FrameData = defaultdict(list)
     extract_and_append_gamestate_inplace(frame_data, gamestate)
-    # Filter out None values within lists and convert to tensors
+    # filter out None values within lists and convert to tensors
     return TensorDict(
         {k: torch.tensor(v) for k, v in frame_data.items()},
         batch_size=(1,),
@@ -91,7 +91,7 @@ def extract_and_append_gamestate_inplace(
     assert curr_gamestate.stage.value in MELEE_STAGE_IDS, f'Stage {curr_gamestate.stage} not valid'
 
     if replay_uuid is not None:
-        # Duplicate replay_uuid across frames for preprocessing simplicity
+        # duplicate replay_uuid across frames for preprocessing simplicity
         frame_data_by_field['replay_uuid'].append(replay_uuid)
 
     frame_data_by_field['frame'].append(curr_gamestate.frame)
@@ -103,7 +103,7 @@ def extract_and_append_gamestate_inplace(
             f'Character {player_state.character} not valid'
         )
 
-        # Player / gamestate data
+        # player / gamestate data
         player_data = extract_player_state(player_state)
 
         player_data['port'] = port

@@ -2,20 +2,21 @@
 # -*- coding: utf-8 -*-
 
 import random
+from pathlib import Path
 
 from loguru import logger
 
-from fax.emulator_helper import EmulatorManager, find_open_udp_ports
-from fax.gamestate_utils import extract_eval_gamestate_as_tensordict
-from fax.paths import REPLAYS
+from fax.config import create_parser, parse_args
+from fax.utils.emulator_helper import EmulatorManager, find_open_udp_ports
+from fax.utils.gamestate_utils import extract_eval_gamestate_as_tensordict
 
 
-def main():
+def main(replay_dir: Path):
     udp_port = find_open_udp_ports(1)[0]
     emulator_manager = EmulatorManager(
         udp_port=udp_port,
         player='p1',
-        replay_dir=REPLAYS / 'example',
+        replay_dir=replay_dir,
         debug=True,
         opponent_cpu_level=0,
     )
@@ -52,4 +53,7 @@ def generate_random_inputs():
 
 
 if __name__ == '__main__':
-    main()
+    exposed_args = {'PATHS': 'replays'}
+    parser = create_parser(exposed_args)
+    cfg = parse_args(parser.parse_args(), __file__)
+    main(cfg.paths.replays)

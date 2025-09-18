@@ -11,8 +11,8 @@ from typing import List
 
 from loguru import logger
 
-from fax.constants import CHARACTER_NAME_TO_ID
 from fax.dataprep.slp_reader import TrainReplayRecord
+from fax.utils.constants import CHARACTER_NAME_TO_ID
 
 
 class DataBase:

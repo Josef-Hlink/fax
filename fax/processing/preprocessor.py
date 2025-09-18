@@ -6,8 +6,8 @@ import torch
 from tensordict import TensorDict
 
 from fax.config import CFG
-from fax.constants import MATCHUP_TO_BUCKET, Player, get_opponent
 from fax.dataprep.stats import FeatureStats, load_dataset_stats
+from fax.utils.constants import MATCHUP_TO_BUCKET, Player, get_opponent
 
 from .configs import (
     InputConfig,

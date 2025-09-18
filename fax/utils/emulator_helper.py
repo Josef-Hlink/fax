@@ -14,9 +14,9 @@ import melee
 import psutil
 from loguru import logger
 
-from fax.constants import ORIGINAL_BUTTONS, PLAYER_1_PORT, PLAYER_2_PORT, Player, get_opponent
-from fax.eval_helper import EpisodeStats, Matchup
-from fax.paths import EXE, ISO, REPLAYS
+from fax.config import EXE, ISO, REPLAYS  # TODO: fix
+from fax.utils.constants import ORIGINAL_BUTTONS, PLAYER_1_PORT, PLAYER_2_PORT, Player, get_opponent
+from fax.utils.eval_helper import EpisodeStats, Matchup  # TODO: add eval_helper to fax
 
 
 def _get_console_port(player: Player) -> int:

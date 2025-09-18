@@ -24,9 +24,9 @@ from streaming import MDSWriter
 from tqdm import tqdm
 
 from fax.config import create_parser, parse_args
-from fax.constants import NP_MASK_VALUE
-from fax.gamestate_utils import FrameData, extract_and_append_gamestate_inplace
-from fax.schema import MDS_DTYPE_STR_BY_COLUMN, NP_TYPE_BY_COLUMN
+from fax.utils.constants import NP_MASK_VALUE
+from fax.utils.gamestate_utils import FrameData, extract_and_append_gamestate_inplace
+from fax.utils.schema import MDS_DTYPE_STR_BY_COLUMN, NP_TYPE_BY_COLUMN
 
 
 def slp_to_mds(slp_dir: Path, mds_dir: Path, split_idx: int) -> None:

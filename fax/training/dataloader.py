@@ -8,8 +8,8 @@ from streaming.base.util import clean_stale_shared_memory
 from tensordict import TensorDict
 
 from fax.config import CFG, create_parser, parse_args
-from fax.constants import MATCHUP_TO_BUCKET, Player
 from fax.processing.preprocessor import Preprocessor, convert_ndarray_to_tensordict
+from fax.utils.constants import MATCHUP_TO_BUCKET, Player
 
 FOX = 2  # character ID for Fox
 

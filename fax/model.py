@@ -9,7 +9,8 @@ import torch.nn.functional as F
 from tensordict import TensorDict
 
 from fax.config import CFG, create_parser, parse_args
-from fax.constants import (
+from fax.processing.preprocessor import Preprocessor
+from fax.utils.constants import (
     ACTION_EMBEDDING_DIM,
     CHARACTER_EMBEDDING_DIM,
     NUM_ACTIONS,
@@ -17,8 +18,6 @@ from fax.constants import (
     NUM_STAGES,
     STAGE_EMBEDDING_DIM,
 )
-from fax.dataprep.stats import load_dataset_stats
-from fax.processing.preprocessor import Preprocessor
 
 
 class Model(nn.Module):

@@ -8,7 +8,7 @@ import numpy as np
 import torch
 from tensordict import TensorDict
 
-from fax.constants import (
+from fax.utils.constants import (
     ACTION_EMBEDDING_DIM,
     CHARACTER_EMBEDDING_DIM,
     INCLUDED_BUTTONS,

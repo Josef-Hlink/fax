@@ -21,10 +21,10 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 from tqdm import tqdm
 
 from fax.config import CFG, create_parser, parse_args
-from fax.dataloader import get_dataloaders
 from fax.model import Model
 from fax.processing.preprocessor import Preprocessor
-from fax.writer import DummyWriter, WandbWriter
+from fax.training.dataloader import get_dataloaders
+from fax.utils.writer import DummyWriter, WandbWriter
 
 
 def train(cfg: CFG) -> None:
