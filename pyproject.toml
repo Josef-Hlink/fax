@@ -13,11 +13,9 @@ dependencies = [
     "ipykernel>=6.29.5",
     "loguru>=0.7.3",
     "matplotlib>=3.10.3",
-    "maturin>=1.9.4",
     "melee",
     "mosaicml-streaming>=0.13.0",
     "numpy<2.0",
-    "peppi-py",
     "psutil>=7.0.0",
     "randomname>=0.2.1",
     "ruff>=0.11.8",
@@ -27,14 +25,20 @@ dependencies = [
     "wandb>=0.19.11",
 ]
 
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+[project.optional-dependencies]
+peppi = [
+    "maturin>=1.9.4",
+    "peppi-py",
+]
 
 [tool.uv.sources]
 melee = { git = "https://github.com/vladfi1/libmelee.git", rev = "dev" }
 # NOTE: change this path to where you cloned peppi-py locally
 peppi-py = { path = "/home/jdham/Developer/ext/peppi-py" }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [tool.ruff]
 line-length = 100

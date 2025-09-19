@@ -52,6 +52,11 @@ cd peppi-py
 git checkout v0.8.6
 ```
 
+>[!NOTE]
+> If you are only interested in running the training scripts and already have the MDS files, you can skip this step.
+> At some point I might upload these datasets somewhere, but unless you already have compatible MDS files, you will need peppi.
+> The evaluation scripts also depend on peppi, but you could probably rewrite the code to use `libmelee` for evaluation instead.
+
 #### Package: fax
 
 Now update the path that points to your local peppi-py clone in the [pyproject.toml](pyproject.toml) of our own repo (fax).
@@ -62,14 +67,16 @@ Now update the path that points to your local peppi-py clone in the [pyproject.t
 peppi-py = { path = "/home/jdham/Developer/ext/peppi-py" }
 ```
 
-To create a .venv and install the dependencies, you can now run a simple `uv sync` in the top-level of this repo.
+To create a .venv and install the dependencies, you can now run a simple `uv sync --extra peppi` in the top-level of this repo,
+or just `uv sync` if you want to try without peppi (not recommended).
 
 If you really don't want to use uv, you can also do it manually with the following commands:
 
 ```sh
 python3 -m venv .venv  # make sure your python binary is 3.11 (or higher)
 source .venv/bin/activate
-pip install -e .  # pulls deps from pyproject.toml in editable mode
+pip install -e .[peppi]  # pulls deps from pyproject.toml in editable mode
+# pip install -e .  # <-- without peppi
 
 cd path/to/peppi-py
 maturin develop  # builds and installs peppi-py into the active venv
