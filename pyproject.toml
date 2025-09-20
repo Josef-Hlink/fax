@@ -34,7 +34,6 @@ peppi = [
 [tool.uv.sources]
 melee = { git = "https://github.com/vladfi1/libmelee.git", rev = "dev" }
 # NOTE: change this path to where you cloned peppi-py locally
-peppi-py = { path = "/home/jdham/Developer/ext/peppi-py" }
 
 [build-system]
 requires = ["hatchling"]

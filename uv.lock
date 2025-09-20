@@ -720,7 +720,7 @@ requires-dist = [
     { name = "melee", git = "https://github.com/vladfi1/libmelee.git?rev=dev" },
     { name = "mosaicml-streaming", specifier = ">=0.13.0" },
     { name = "numpy", specifier = "<2.0" },
-    { name = "peppi-py", marker = "extra == 'peppi'", directory = "../../ext/peppi-py" },
+    { name = "peppi-py", marker = "extra == 'peppi'" },
     { name = "psutil", specifier = ">=7.0.0" },
     { name = "randomname", specifier = ">=0.2.1" },
     { name = "ruff", specifier = ">=0.11.8" },
@@ -1689,16 +1689,18 @@ wheels = [
 
 [[package]]
 name = "peppi-py"
-source = { directory = "../../ext/peppi-py" }
+version = "0.8.6"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "inflection" },
     { name = "pyarrow" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "inflection", specifier = "~=0.5" },
-    { name = "pyarrow", specifier = "~=21.0" },
+sdist = { url = "https://files.pythonhosted.org/packages/67/14/68108b2485af8de17c2c1af5528a42c8aa4494b2ea11a8532f831a1f1fc0/peppi_py-0.8.6.tar.gz", hash = "sha256:1792fe5ccca3aa8f61ae5518590fbb8eb77ee14907a0771d724657cafcc1478c", size = 223008, upload-time = "2025-08-31T19:57:37.431Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d3/b0/e33eaa82fec590d07fe7c0bd86fe81ccfe3e333d48bb20509bf7016246c2/peppi_py-0.8.6-cp310-abi3-macosx_10_12_x86_64.macosx_11_0_arm64.macosx_10_12_universal2.whl", hash = "sha256:659f30a632c9044a908a8575c6985e36577b3d8e7cfc8cf273af15d68edea978", size = 1839578, upload-time = "2025-08-31T19:57:31.435Z" },
+    { url = "https://files.pythonhosted.org/packages/b2/de/261c263b6223e4c31cb7abd1d0ea35d81b1a276a9ffb329025968289c97c/peppi_py-0.8.6-cp310-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:f1eb9377dbc932dd8ffeb15fae593729ca8a3ce6dafd9bb7d24914bac8147a09", size = 944235, upload-time = "2025-08-31T19:57:33.032Z" },
+    { url = "https://files.pythonhosted.org/packages/4a/84/b09f8b906ddf046f26df6be5d381869898fad93d02f35eb371bc2cc6ce5d/peppi_py-0.8.6-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:f9d9035b518402e7e20720c83150c9d1e82ebef2bf82018660f6350aac9a229c", size = 1036629, upload-time = "2025-08-31T19:57:34.667Z" },
+    { url = "https://files.pythonhosted.org/packages/ad/97/9e976f4279bb618943884b026d2fc68d8c11b84ffc9bd49d055cf07b7742/peppi_py-0.8.6-cp310-abi3-win_amd64.whl", hash = "sha256:2a813d1d8b9f4787cb649db49b1491f6ab19cac037933a1256fcd418396297fb", size = 807856, upload-time = "2025-08-31T19:57:36.089Z" },
 ]
 
 [[package]]
