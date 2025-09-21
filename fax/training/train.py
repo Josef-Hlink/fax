@@ -132,7 +132,7 @@ class Trainer(torch.nn.Module):
         """
         self.model.train()
         total_loss = 0.0
-        clean_stale_shared_memory()
+        # clean_stale_shared_memory()
 
         for batch in tqdm(train_loader, desc=f'epoch {epoch}/{n_epochs}'):
             inputs = batch['inputs'].to(self.device)
@@ -160,7 +160,7 @@ class Trainer(torch.nn.Module):
         """
         self.model.eval()
         total_loss = 0.0
-        clean_stale_shared_memory()
+        # clean_stale_shared_memory()
 
         with torch.no_grad():
             for batch in tqdm(val_loader, desc=f'validating'):
