@@ -5,7 +5,7 @@
 #SBATCH --mem=16G
 #SBATCH --time=1-00:00:00  # one day
 #SBATCH --job-name=fax1k
-#SBATCH --array=0-7  # 8 jobs total
+#SBATCH --array=4-7  # 4 jobs total
 #SBATCH --output=/home/s2233827/slurm/%x_%A/%a.out
 
 # move into project and load wandb env vars
@@ -16,7 +16,7 @@ set -a; source .env; set +a
 mkdir -p "$HOME/slurm/${SLURM_JOB_NAME}_${SLURM_ARRAY_JOB_ID}"
 
 # matchup mapping
-MATCHUPS=(XvX XvF FvX FvF XvX XvF FvX XvX)
+MATCHUPS=(XvX XvF FvX FvF XvX XvF FvX FvF)
 MATCHUP="${MATCHUPS[$SLURM_ARRAY_TASK_ID]}"
 
 # data mapping
