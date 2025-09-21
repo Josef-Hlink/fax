@@ -5,7 +5,7 @@
 #SBATCH --mem=16G
 #SBATCH --time=1-00:00:00  # one day
 #SBATCH --job-name=s3-fax1k
-#SBATCH --array=0-7  # 8 jobs total
+#SBATCH --array=0-3  # 4 jobs
 #SBATCH --output=/home/s2233827/slurm/%x_%A/%a.out
 
 # move into project and load wandb env vars
@@ -15,8 +15,13 @@ set -a; source .env; set +a
 # create slurm stdout dir
 mkdir -p "$HOME/slurm/${SLURM_JOB_NAME}_${SLURM_ARRAY_JOB_ID}"
 
-# create s3 data dir
+# create s3 data dir if it doesn't exist
 DATA="$HOME/Data/s3/mds${SLURM_ARRAY_TASK_ID}"
+# if it does exist, exit the run (we're already training on it)
+if [ -d "$DATA" ]; then
+    echo "Data directory $DATA already exists, exiting to avoid overwriting."
+    exit 1
+fi
 mkdir -p "$DATA"
 
 # matchup mapping
