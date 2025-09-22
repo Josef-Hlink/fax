@@ -88,6 +88,13 @@ class ExpCFG:
 
 
 @attr.s(auto_attribs=True, frozen=True)
+class EvalCFG:
+    p1_type: str
+    p2_type: str
+    n_loops: int
+
+
+@attr.s(auto_attribs=True, frozen=True)
 class CFG:
     paths: PathsCFG
     base: BaseCFG
@@ -95,6 +102,7 @@ class CFG:
     model: ModelCFG
     optim: OptimCFG
     exp: ExpCFG
+    eval: EvalCFG
 
     def to_dict(self) -> dict:
         """Convert the CFG dataclass to a dictionary."""
@@ -105,6 +113,7 @@ class CFG:
             'model': attr.asdict(self.model),
             'optim': attr.asdict(self.optim),
             'exp': attr.asdict(self.exp),
+            'eval': attr.asdict(self.eval),
         }
 
 
@@ -192,6 +201,7 @@ def parse_args(args: Namespace, caller: str) -> CFG:
         model=build('MODEL', ModelCFG),
         optim=build('OPTIM', OptimCFG),
         exp=build('EXP', ExpCFG),
+        eval=build('EVAL', EvalCFG),
     )
     setup_logger(Path(f'{cfg.paths.logs / Path(caller).stem}.log'), debug=cfg.base.debug)
     for section_name, section in cfg.__dict__.items():
@@ -233,6 +243,7 @@ if __name__ == '__main__':
         'MODEL': 'n-layers n-heads seq-len emb-dim dropout gamma',
         'OPTIM': 'lr wd b1 b2',
         'EXP': '*',  # NOTE: this exposes all exp args
+        'EVAL': 'p1-type p2-type n-loops',
     }
     parser = create_parser(exposed_args)
     args = parser.parse_args()

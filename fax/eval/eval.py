@@ -133,7 +133,7 @@ def gpu_worker(
     torch.set_float32_matmul_precision('high')
     preprocessor = Preprocessor(cfg)
     model = Model(preprocessor, cfg)
-    with open(p1_weights_path / 'best_model_finetuned.pth', 'rb') as f:
+    with open(p1_weights_path, 'rb') as f:
         logger.debug(f'Loading model weights from {p1_weights_path}...')
         state_dict = torch.load(f, map_location='cpu')
         model.load_state_dict(state_dict)
@@ -270,7 +270,7 @@ def run_closed_loop_evaluation(
     gpu_process.start()
 
     matchups = [Matchup() for _ in range(n_workers)]
-    base_replay_dir = cfg.paths.replays / 'cle'
+    base_replay_dir = cfg.paths.replays / 'cle' / f'{cfg.eval.p1_type}_vs_{cfg.eval.p2_type}'
     logger.debug(f'Replays will be saved to {base_replay_dir}')
 
     cpu_processes: List[mp.Process] = []
@@ -361,13 +361,18 @@ def flatten_replay_dir(replay_dir: Path) -> None:
 
 
 if __name__ == '__main__':
-    exposed_args = {'PATHS': 'runs replays', 'BASE': 'debug'}
+    exposed_args = {'PATHS': 'runs replays', 'BASE': 'debug', 'EVAL': 'p1-type p2-type n-loops'}
     parser = create_parser(exposed_args)
     cfg = parse_args(parser.parse_args(), __file__)
-    run_closed_loop_evaluation(
-        cfg,
-        p1_weights_path=cfg.paths.runs / 'coincident-tincan-228',
-        player='p1',
-        enable_ffw=False,
-        debug=cfg.base.debug,
-    )
+
+    # every loop will generate ~2x n_workers replays
+    for i in range(cfg.eval.n_loops):
+        logger.info(f'CLE loop {i + 1}/{cfg.eval.n_loops}')
+        p1_weights_path = cfg.paths.runs / cfg.eval.p1_type / 'best_model.pth'
+        run_closed_loop_evaluation(
+            cfg,
+            p1_weights_path=p1_weights_path,
+            player='p1',
+            enable_ffw=False,
+            debug=cfg.base.debug,
+        )

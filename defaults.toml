@@ -36,3 +36,7 @@ b2 = 0.999
 matchup = "FvF"
 n-finetune-epochs = 10
 finetune-lr-frac = 0.5
+[EVAL]
+p1-type = "1k-FvF-ft"
+p2-type = "cpu"
+n-loops = 5

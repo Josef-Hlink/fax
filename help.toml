@@ -40,3 +40,7 @@ b2 = "Adam optimizer beta2 parameter."
 matchup = "Type of data the agent will be trained on. Options are FvF, FvX, XvF, XvX."
 n-finetune-epochs = "Number of finetuning epochs to perform after the main training is complete."
 finetune-lr-frac = "Fraction of the original learning rate to initialize the finetuning learning rate."
+[EVAL]
+p1-type = "Type of player 1. Format like <n-epochs>-<matchup>[-ft]. E.g. 1k-FvF-ft for a finetuned agent after 1k epochs of training on FvF data."
+p2-type = "Type of player 2. Same format as p1-type, or 'cpu' for the default CPU AI."  # TODO: actually support PvP
+n-loops = "Number of times to run the \"infinite\" evaluation loop."
