@@ -109,7 +109,7 @@ def parse_eval_replay(file: Path) -> Optional[EvalReplayRecord]:
     """Read contents of a .slp file and return an EvalReplayRecord."""
 
     try:
-        game: Game = read_slippi(file.as_posix(), skip_frames=True)
+        game: Game = read_slippi(file.as_posix(), skip_frames=False)
     except Exception as e:
         logger.warning(f'Failed to read {file.name}: {e}')
         return

@@ -1,16 +1,18 @@
-# temporarily borrowed from eric
+# -*- coding: utf-8 -*-
+
 """
 Run closed loop evaluation of a model in the emulator.
+
+Largely copied from https://github.com/ericyuegu/hal
 """
 
-import sys
 import time
 import traceback
 from multiprocessing.synchronize import Event as EventType
 from pathlib import Path
 from typing import List
-from typing import Optional
 
+from tqdm import trange
 import torch
 import torch.multiprocessing as mp
 from loguru import logger
@@ -20,25 +22,9 @@ from fax.config import CFG, create_parser, parse_args
 from fax.model import Model
 from fax.utils.constants import Player
 from fax.utils.emulator_helper import EmulatorManager, find_open_udp_ports, Matchup
-from fax.eval.eval_helper import (
-    EpisodeStats,
-    mock_framedata_as_tensordict,
-    share_and_pin_memory,
-)
+from fax.utils.schema import NP_TYPE_BY_COLUMN
 from fax.utils.gamestate_utils import extract_eval_gamestate_as_tensordict
 from fax.processing.preprocessor import Preprocessor
-
-
-def setup_cpu_logger(debug: bool = False) -> None:
-    logger.remove()
-    logger_format = (
-        '<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | '
-        '<level>{level: <8}</level> | '
-        '<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> | '
-        'rank={extra[rank]} - <level>{message}</level>'
-    )
-    logger.configure(extra={'rank': ''})  # Default values
-    logger.add(sys.stderr, format=logger_format, level='DEBUG' if debug else 'INFO')
 
 
 def cpu_worker(
@@ -55,7 +41,6 @@ def cpu_worker(
     model_input_ready_flag: EventType,
     model_output_ready_flag: EventType,
     stop_event: EventType,
-    episode_stats_queue: mp.Queue,
     enable_ffw: bool = True,
     debug: bool = False,
 ) -> None:
@@ -63,7 +48,6 @@ def cpu_worker(
     CPU worker that preprocesses data, writes it into shared memory,
     and sends controller inputs to the emulator from model predictions.
     """
-    setup_cpu_logger(debug=debug)
 
     with logger.contextualize(rank=rank):
         emulator_manager = EmulatorManager(
@@ -79,56 +63,46 @@ def cpu_worker(
         try:
             gamestate_generator = emulator_manager.run_game(iso_path)
             gamestate = next(gamestate_generator)
-            # Skip first N frames to match starting frame offset from training sequence sampling
+            # skip first N frames to match starting frame offset from training sequence sampling
             logger.debug(
                 f'Skipping {preprocessor.eval_warmup_frames} starting frames to match training distribution'
             )
             for _ in range(preprocessor.eval_warmup_frames):
                 gamestate = next(gamestate_generator)
 
-            i = 0
-            while gamestate is not None:
-                preprocess_start = time.perf_counter()
+            # only show progress bar for one worker to avoid clutter
+            iterator = trange(99999, desc=f'CPU worker 1') if rank == 1 else range(99999)
+            for _ in iterator:
+                if gamestate is None:
+                    break
+
                 gamestate_td = extract_eval_gamestate_as_tensordict(gamestate)
                 model_inputs = preprocessor.preprocess_inputs(gamestate_td, player)
-                preprocess_time = time.perf_counter() - preprocess_start
 
-                transfer_start = time.perf_counter()
                 sharded_model_input: TensorDict = shared_batched_model_input[rank]
-                # Update our rank of the shared buffer with the last frame
+                # update our rank of the shared buffer with the last frame
                 sharded_model_input.update_(model_inputs[-1], non_blocking=True)
-                transfer_time = time.perf_counter() - transfer_start
 
                 model_input_ready_flag.set()
 
-                # Wait for the output to be ready
+                # wait for the output to be ready
                 while not model_output_ready_flag.is_set() and not stop_event.is_set():
-                    time.sleep(0.0001)  # Sleep briefly to avoid busy waiting
+                    time.sleep(0.0001)  # sleep briefly to avoid busy waiting
 
                 if stop_event.is_set():
                     break
 
-                # Read model output and postprocess
+                # read model output and postprocess
                 model_output = shared_batched_model_output[rank].clone()
-                postprocess_start = time.perf_counter()
                 controller_inputs = preprocessor.postprocess_preds(model_output)
-                postprocess_time = time.perf_counter() - postprocess_start
 
-                if debug and i % 60 == 0:
-                    logger.debug(
-                        f'Preprocess: {preprocess_time * 1000:.2f}ms, Transfer: {transfer_time * 1000:.2f}ms, Postprocess: {postprocess_time * 1000:.2f}ms'
-                    )
-
-                # Send controller inputs to emulator, update gamestate
+                # send controller inputs to emulator, update gamestate
                 gamestate = gamestate_generator.send((controller_inputs, None))
 
-                # Clear the output ready flag for the next iteration
+                # clear the output ready flag for the next iteration
                 model_output_ready_flag.clear()
-                i += 1
         except StopIteration:
-            logger.success(f'CPU worker {rank} episode complete.')
-            logger.info(f'CPU worker {rank} episode stats: {emulator_manager.episode_stats}')
-            episode_stats_queue.put(emulator_manager.episode_stats)
+            logger.debug(f'CPU worker {rank} episode complete.')
         except Exception as e:
             logger.error(
                 f'CPU worker {rank} encountered an error: {e}\nTraceback:\n{"".join(traceback.format_tb(e.__traceback__))}'
@@ -136,7 +110,7 @@ def cpu_worker(
         finally:
             model_input_ready_flag.set()
             stop_event.set()
-            logger.info(f'CPU worker {rank} stopped')
+            logger.debug(f'CPU worker {rank} stopped')
 
 
 def gpu_worker(
@@ -147,7 +121,7 @@ def gpu_worker(
     model_output_ready_flags: List[EventType],
     seq_len: int,
     stop_events: List[EventType],
-    model_weights_path: Path,
+    p1_weights_path: Path,
     device: torch.device | str,
     cpu_flag_timeout: float = 5.0,
     debug: bool = False,
@@ -159,32 +133,28 @@ def gpu_worker(
     torch.set_float32_matmul_precision('high')
     preprocessor = Preprocessor(cfg)
     model = Model(preprocessor, cfg)
-    with open(model_weights_path, 'rb') as f:
-        logger.info(f'Loading model weights from {model_weights_path}...')
+    with open(p1_weights_path / 'best_model_finetuned.pth', 'rb') as f:
+        logger.debug(f'Loading model weights from {p1_weights_path}...')
         state_dict = torch.load(f, map_location='cpu')
         model.load_state_dict(state_dict)
     model.eval()
     model.to(device)
 
-    # Stack along time dimension
+    # stack along time dimension
     # shape: (n_workers, seq_len)
-    context_window_BL: TensorDict = torch.stack(
-        [shared_batched_model_input_B for _ in range(seq_len)],
-        dim=-1,
-    ).to(device)  # type: ignore
-    logger.info(
-        f'Context window shape: {context_window_BL.shape}, device: {context_window_BL.device}'
-    )
+    inputs_BL: List[torch.Tensor] = [shared_batched_model_input_B for _ in range(seq_len)]  # type: ignore
+    context_window_BL: TensorDict = torch.stack(inputs_BL, dim=-1).to(device)  # type: ignore
+    logger.debug(f'Context window shape: {context_window_BL.shape}')
 
-    # Warmup CUDA graphs with dummy inputs
-    logger.info('Compiling model...')
+    # warmup CUDA graphs with dummy inputs
+    logger.debug('Compiling model...')
     model = torch.compile(model, mode='default')
     with torch.no_grad():
         model(context_window_BL)
-    logger.info('Warmup step finished')
+    logger.debug('Warmup step finished')
 
     def wait_for_cpu_workers(timeout: float = 5.0) -> None:
-        # Wait for all CPU workers to signal that data is ready
+        # wait for all CPU workers to signal that data is ready
         flag_wait_start = time.perf_counter()
         for i, (input_flag, stop_event) in enumerate(zip(model_input_ready_flags, stop_events)):
             while not input_flag.is_set() and not stop_event.is_set():
@@ -194,12 +164,12 @@ def gpu_worker(
                     )
                     input_flag.set()
                     stop_event.set()
-                time.sleep(0.0001)  # Sleep briefly to avoid busy waiting
+                time.sleep(0.0001)  # sleep briefly to avoid busy waiting
 
-    # Longer timeout on init to allow for emulators to start
+    # longer timeout on init to allow for emulators to start
     wait_for_cpu_workers(timeout=30.0)
 
-    iteration = 0
+    i = 0
     while not all(event.is_set() for event in stop_events):
         iteration_start = time.perf_counter()
 
@@ -209,52 +179,166 @@ def gpu_worker(
             break
 
         transfer_start = time.perf_counter()
-        if iteration < seq_len:
-            # While context window is not full, fill in from the left
-            context_window_BL[:, iteration].copy_(shared_batched_model_input_B, non_blocking=True)
+        if i < seq_len:
+            # while context window is not full, fill in from the left
+            context_window_BL[:, i].copy_(shared_batched_model_input_B, non_blocking=True)
         else:
-            # Update the context window by rolling frame data left and adding new data on the right
-            # TODO move this to line 178 to overlap with waiting on CPU workers
+            # update the context window by rolling frame data left and adding new data on the right
             context_window_BL[:, :-1].copy_(context_window_BL[:, 1:].clone())
             context_window_BL[:, -1].copy_(shared_batched_model_input_B, non_blocking=True)
-        # context_window_BL.save(f"/tmp/multishine_debugging/model_inputs_{iteration:06d}")
         transfer_time = time.perf_counter() - transfer_start
 
         inference_start = time.perf_counter()
         with torch.no_grad():
             outputs_BL: TensorDict = model(context_window_BL)
-        # outputs_BL.save(f"/tmp/multishine_debugging/model_outputs_{iteration:06d}")
-        seq_idx = min(seq_len - 1, iteration)
+        seq_idx = min(seq_len - 1, i)
         outputs_B: TensorDict = outputs_BL[:, seq_idx]
         inference_time = time.perf_counter() - inference_start
 
         writeback_start = time.perf_counter()
-        # Write last frame of model preds to shared buffer
+        # write last frame of model preds to shared buffer
         shared_batched_model_output_B.copy_(outputs_B)
         writeback_time = time.perf_counter() - writeback_start
 
         total_time = time.perf_counter() - iteration_start
 
-        if iteration % 60 == 0:
-            msg = f'Iteration {iteration}: Total: {total_time * 1000:.2f}ms '
+        if i % 60 == 0:
+            msg = f'Iteration {i}: Total: {total_time * 1000:.2f}ms '
             if debug:
                 msg += f'(Update context: {transfer_time * 1000:.2f}ms, Inference: {inference_time * 1000:.2f}ms, Writeback: {writeback_time * 1000:.2f}ms)'
             _ = msg
             # logger.debug(msg)
 
-        iteration += 1
+        i += 1
 
-        # Signal to CPU workers that output is ready
+        # signal to CPU workers that output is ready
         for output_flag in model_output_ready_flags:
             output_flag.set()
 
-        # Clear model_input_ready_flags for the next iteration
+        # clear model_input_ready_flags for the next iteration
         for input_flag in model_input_ready_flags:
             input_flag.clear()
 
 
+def run_closed_loop_evaluation(
+    cfg: CFG,
+    p1_weights_path: Path,
+    player: Player = 'p1',
+    enable_ffw: bool = False,
+    debug: bool = False,
+) -> None:
+    mp.set_start_method('spawn', force=True)
+    device: torch.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    preprocessor = Preprocessor(cfg)
+    n_workers = 2  # TODO: make configurable
+
+    # create events to signal when cpu and gpu workers are ready
+    model_input_ready_flags: List[EventType] = [mp.Event() for _ in range(n_workers)]
+    model_output_ready_flags: List[EventType] = [mp.Event() for _ in range(n_workers)]
+    # Create events to signal when emulator episodes end
+    stop_events: List[EventType] = [mp.Event() for _ in range(n_workers)]
+
+    # Share and pin buffers in CPU memory for transferring model inputs and outputs
+    mock_framedata_L = mock_framedata_as_tensordict(preprocessor.trajectory_sampling_len)
+    # Store only a single time step to minimize copying
+    mock_model_inputs_ = preprocessor.preprocess_inputs(mock_framedata_L, player)[-1]
+    # batch_size == n_workers
+    shared_batched_model_input_B: TensorDict = torch.stack(
+        [mock_model_inputs_ for _ in range(n_workers)],
+        dim=0,  # type: ignore
+    )
+    shared_batched_model_input_B = share_and_pin_memory(shared_batched_model_input_B)
+    preds: list[torch.Tensor] = [preprocessor.mock_preds_as_tensordict() for _ in range(n_workers)]  # type: ignore
+    shared_batched_model_output_B: TensorDict = torch.stack(preds, dim=0)  # type: ignore
+    shared_batched_model_output_B = share_and_pin_memory(shared_batched_model_output_B)
+
+    gpu_process: mp.Process = mp.Process(
+        target=gpu_worker,
+        kwargs={
+            'cfg': cfg,
+            'shared_batched_model_input_B': shared_batched_model_input_B,
+            'shared_batched_model_output_B': shared_batched_model_output_B,
+            'model_input_ready_flags': model_input_ready_flags,
+            'model_output_ready_flags': model_output_ready_flags,
+            'seq_len': preprocessor.seq_len,
+            'stop_events': stop_events,
+            'p1_weights_path': p1_weights_path,
+            'device': device,
+            'debug': debug,
+        },
+    )
+    gpu_process.start()
+
+    matchups = [Matchup() for _ in range(n_workers)]
+    base_replay_dir = cfg.paths.replays / 'cle'
+    logger.debug(f'Replays will be saved to {base_replay_dir}')
+
+    cpu_processes: List[mp.Process] = []
+    ports = find_open_udp_ports(n_workers)
+    for i, matchup in enumerate(matchups):
+        replay_dir = base_replay_dir / f'{i:03d}'
+        replay_dir.mkdir(exist_ok=True, parents=True)
+        p: mp.Process = mp.Process(
+            target=cpu_worker,
+            kwargs={
+                'emulator_path': cfg.paths.exe,
+                'iso_path': cfg.paths.iso,
+                'shared_batched_model_input': shared_batched_model_input_B,
+                'shared_batched_model_output': shared_batched_model_output_B,
+                'rank': i,
+                'port': ports[i],
+                'player': player,
+                'matchup': matchup,
+                'replay_dir': replay_dir,
+                'preprocessor': preprocessor,
+                'model_input_ready_flag': model_input_ready_flags[i],
+                'model_output_ready_flag': model_output_ready_flags[i],
+                'stop_event': stop_events[i],
+                'enable_ffw': enable_ffw,
+                'debug': debug,
+            },
+        )
+        cpu_processes.append(p)
+        p.start()
+
+    gpu_process.join()
+
+    for p in cpu_processes:
+        p.join()
+
+    # clean up replay dir
+    flatten_replay_dir(base_replay_dir)
+    logger.info('Closed loop evaluation complete')
+
+
+def mock_framedata_as_tensordict(seq_len: int) -> TensorDict:
+    """Mock `seq_len` frames of gamestate data."""
+    return TensorDict({k: torch.ones(seq_len) for k in NP_TYPE_BY_COLUMN}, batch_size=(seq_len,))
+
+
+def share_and_pin_memory(tensordict: TensorDict) -> TensorDict:
+    """
+    Move tensordict to both shared and pinned memory.
+
+    https://github.com/pytorch/pytorch/issues/32167#issuecomment-753551842
+    """
+    tensordict.share_memory_()
+
+    cudart = torch.cuda.cudart()
+    if cudart is None:
+        return tensordict
+
+    for tensor in tensordict.flatten_keys().values():
+        assert isinstance(tensor, torch.Tensor)
+        cudart.cudaHostRegister(tensor.data_ptr(), tensor.numel() * tensor.element_size(), 0)
+        assert tensor.is_shared()
+        assert tensor.is_pinned()
+
+    return tensordict
+
+
 def flatten_replay_dir(replay_dir: Path) -> None:
-    # Copy all files to base replay dir and clean up subdirs
+    """Copy all files to base replay dir and clean up subdirs."""
     for file in replay_dir.glob('**/*.slp'):
         target_path = replay_dir / file.name
         counter = 1
@@ -276,121 +360,13 @@ def flatten_replay_dir(replay_dir: Path) -> None:
                 logger.warning(f'Failed to remove directory {directory}: {e}')
 
 
-def run_closed_loop_evaluation(
-    cfg: CFG,
-    eval_stats_queue: Optional[mp.Queue] = None,
-    player: Player = 'p1',
-    enable_ffw: bool = False,
-    debug: bool = False,
-) -> None:
-    try:
-        mp.set_start_method('spawn')
-    except RuntimeError:
-        pass
-    device: torch.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    preprocessor = Preprocessor(cfg)
-    n_workers = 2  # TODO: make configurable
-
-    # create events to signal when cpu and gpu workers are ready
-    model_input_ready_flags: List[EventType] = [mp.Event() for _ in range(n_workers)]
-    model_output_ready_flags: List[EventType] = [mp.Event() for _ in range(n_workers)]
-    # Create events to signal when emulator episodes end
-    stop_events: List[EventType] = [mp.Event() for _ in range(n_workers)]
-
-    # Share and pin buffers in CPU memory for transferring model inputs and outputs
-    mock_framedata_L = mock_framedata_as_tensordict(preprocessor.trajectory_sampling_len)
-    # Store only a single time step to minimize copying
-    mock_model_inputs_ = preprocessor.preprocess_inputs(mock_framedata_L, player)[-1]
-    # batch_size == n_workers
-    shared_batched_model_input_B: TensorDict = torch.stack(
-        [mock_model_inputs_ for _ in range(n_workers)],
-        dim=0,  # type: ignore
-    )
-    shared_batched_model_input_B = share_and_pin_memory(shared_batched_model_input_B)
-    shared_batched_model_output_B: TensorDict = torch.stack(
-        [preprocessor.mock_preds_as_tensordict() for _ in range(n_workers)],
-        dim=0,  # type: ignore
-    )
-    shared_batched_model_output_B = share_and_pin_memory(shared_batched_model_output_B)
-
-    gpu_process: mp.Process = mp.Process(
-        target=gpu_worker,
-        kwargs={
-            'cfg': cfg,
-            'shared_batched_model_input_B': shared_batched_model_input_B,
-            'shared_batched_model_output_B': shared_batched_model_output_B,
-            'model_input_ready_flags': model_input_ready_flags,
-            'model_output_ready_flags': model_output_ready_flags,
-            'seq_len': preprocessor.seq_len,
-            'stop_events': stop_events,
-            'model_weights_path': cfg.paths.runs / 'best_model.pth',
-            'device': device,
-            'debug': debug,
-        },
-    )
-    gpu_process.start()
-
-    matchups = [Matchup() for _ in range(n_workers)]
-    base_replay_dir = cfg.paths.replays / 'closed_loop_eval'
-    logger.info(f'Replays will be saved to {base_replay_dir}')
-
-    cpu_processes: List[mp.Process] = []
-    ports = find_open_udp_ports(n_workers)
-    episode_stats_queue: mp.Queue = mp.Queue()
-    for i, matchup in enumerate(matchups):
-        replay_dir = base_replay_dir / f'{i:03d}'
-        replay_dir.mkdir(exist_ok=True, parents=True)
-        p: mp.Process = mp.Process(
-            target=cpu_worker,
-            kwargs={
-                'emulator_path': cfg.paths.exe,
-                'iso_path': cfg.paths.iso,
-                'shared_batched_model_input': shared_batched_model_input_B,
-                'shared_batched_model_output': shared_batched_model_output_B,
-                'rank': i,
-                'port': ports[i],
-                'player': player,
-                'matchup': matchup,
-                'replay_dir': replay_dir,
-                'preprocessor': preprocessor,
-                'model_input_ready_flag': model_input_ready_flags[i],
-                'model_output_ready_flag': model_output_ready_flags[i],
-                'stop_event': stop_events[i],
-                'episode_stats_queue': episode_stats_queue,
-                'enable_ffw': enable_ffw,
-                'debug': debug,
-            },
-        )
-        cpu_processes.append(p)
-        p.start()
-
-    gpu_process.join()
-
-    for p in cpu_processes:
-        p.join()
-
-    # Clean up replay dir
-    flatten_replay_dir(base_replay_dir)
-
-    # Aggregate episode stats and return if requested
-    episode_stats: List[EpisodeStats] = []
-    while not episode_stats_queue.empty():
-        episode_stats.append(episode_stats_queue.get())
-    total_stats = sum(episode_stats, EpisodeStats(episodes=0))
-    logger.info(f'Closed loop evaluation stats: {total_stats}')
-    logger.info('Closed loop evaluation complete')
-
-    if eval_stats_queue is not None:
-        eval_stats_queue.put(total_stats)
-
-
-if __name__ == '__main__': mp.set_start_method('spawn', force=True)
+if __name__ == '__main__':
     exposed_args = {'PATHS': 'runs replays', 'BASE': 'debug'}
     parser = create_parser(exposed_args)
     cfg = parse_args(parser.parse_args(), __file__)
     run_closed_loop_evaluation(
         cfg,
-        eval_stats_queue=None,
+        p1_weights_path=cfg.paths.runs / 'coincident-tincan-228',
         player='p1',
         enable_ffw=False,
         debug=cfg.base.debug,
