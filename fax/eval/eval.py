@@ -3,7 +3,6 @@
 Run closed loop evaluation of a model in the emulator.
 """
 
-import argparse
 import sys
 import time
 import traceback
@@ -17,24 +16,17 @@ import torch.multiprocessing as mp
 from loguru import logger
 from tensordict import TensorDict
 
-from hal.constants import Player
-from hal.emulator_helper import EmulatorManager
-from hal.emulator_helper import find_open_udp_ports
-from hal.emulator_helper import get_replay_dir
-from hal.eval.eval_helper import EpisodeStats
-from hal.eval.eval_helper import Matchup
-from hal.eval.eval_helper import mock_framedata_as_tensordict
-from hal.eval.eval_helper import share_and_pin_memory
-from hal.gamestate_utils import extract_eval_gamestate_as_tensordict
-from hal.preprocess.preprocessor import Preprocessor
-from hal.training.config import EvalConfig
-from hal.training.config import TrainConfig
-from hal.training.config import ValueTrainerConfig
-from hal.training.io import load_config_from_artifact_dir
-from hal.training.io import load_model_from_artifact_dir
-
-# avoid linter auto-deleting import
-ValueTrainerConfig = ValueTrainerConfig
+from fax.config import CFG, create_parser, parse_args
+from fax.model import Model
+from fax.utils.constants import Player
+from fax.utils.emulator_helper import EmulatorManager, find_open_udp_ports, Matchup
+from fax.eval.eval_helper import (
+    EpisodeStats,
+    mock_framedata_as_tensordict,
+    share_and_pin_memory,
+)
+from fax.utils.gamestate_utils import extract_eval_gamestate_as_tensordict
+from fax.processing.preprocessor import Preprocessor
 
 
 def setup_cpu_logger(debug: bool = False) -> None:
@@ -50,6 +42,8 @@ def setup_cpu_logger(debug: bool = False) -> None:
 
 
 def cpu_worker(
+    emulator_path: Path,
+    iso_path: Path,
     shared_batched_model_input: TensorDict,
     shared_batched_model_output: TensorDict,
     rank: int,
@@ -72,17 +66,18 @@ def cpu_worker(
     setup_cpu_logger(debug=debug)
 
     with logger.contextualize(rank=rank):
+        emulator_manager = EmulatorManager(
+            udp_port=port,
+            player=player,
+            emulator_path=emulator_path,
+            replay_dir=replay_dir,
+            opponent_cpu_level=9,
+            matchup=matchup,
+            enable_ffw=enable_ffw,
+            debug=debug,
+        )
         try:
-            emulator_manager = EmulatorManager(
-                udp_port=port,
-                player=player,
-                replay_dir=replay_dir,
-                opponent_cpu_level=9,
-                matchup=matchup,
-                enable_ffw=enable_ffw,
-                debug=debug,
-            )
-            gamestate_generator = emulator_manager.run_game()
+            gamestate_generator = emulator_manager.run_game(iso_path)
             gamestate = next(gamestate_generator)
             # Skip first N frames to match starting frame offset from training sequence sampling
             logger.debug(
@@ -145,15 +140,15 @@ def cpu_worker(
 
 
 def gpu_worker(
+    cfg: CFG,
     shared_batched_model_input_B: TensorDict,  # (n_workers,)
     shared_batched_model_output_B: TensorDict,  # (n_workers,)
     model_input_ready_flags: List[EventType],
     model_output_ready_flags: List[EventType],
     seq_len: int,
     stop_events: List[EventType],
-    artifact_dir: Path,
+    model_weights_path: Path,
     device: torch.device | str,
-    checkpoint_idx: Optional[int] = None,
     cpu_flag_timeout: float = 5.0,
     debug: bool = False,
 ) -> None:
@@ -162,14 +157,20 @@ def gpu_worker(
     performs inference with model, and writes output back to shared memory.
     """
     torch.set_float32_matmul_precision('high')
-    model, _ = load_model_from_artifact_dir(Path(artifact_dir), idx=checkpoint_idx)
+    preprocessor = Preprocessor(cfg)
+    model = Model(preprocessor, cfg)
+    with open(model_weights_path, 'rb') as f:
+        logger.info(f'Loading model weights from {model_weights_path}...')
+        state_dict = torch.load(f, map_location='cpu')
+        model.load_state_dict(state_dict)
     model.eval()
     model.to(device)
 
     # Stack along time dimension
     # shape: (n_workers, seq_len)
     context_window_BL: TensorDict = torch.stack(
-        [shared_batched_model_input_B for _ in range(seq_len)], dim=-1
+        [shared_batched_model_input_B for _ in range(seq_len)],
+        dim=-1,
     ).to(device)  # type: ignore
     logger.info(
         f'Context window shape: {context_window_BL.shape}, device: {context_window_BL.device}'
@@ -238,7 +239,8 @@ def gpu_worker(
             msg = f'Iteration {iteration}: Total: {total_time * 1000:.2f}ms '
             if debug:
                 msg += f'(Update context: {transfer_time * 1000:.2f}ms, Inference: {inference_time * 1000:.2f}ms, Writeback: {writeback_time * 1000:.2f}ms)'
-            logger.debug(msg)
+            _ = msg
+            # logger.debug(msg)
 
         iteration += 1
 
@@ -275,12 +277,10 @@ def flatten_replay_dir(replay_dir: Path) -> None:
 
 
 def run_closed_loop_evaluation(
-    artifact_dir: Path,
-    eval_config: EvalConfig,
-    checkpoint_idx: Optional[int] = None,
+    cfg: CFG,
     eval_stats_queue: Optional[mp.Queue] = None,
     player: Player = 'p1',
-    enable_ffw: bool = False,  # disable by default for emulator stability, TODO debug EXI inputs
+    enable_ffw: bool = False,
     debug: bool = False,
 ) -> None:
     try:
@@ -288,11 +288,10 @@ def run_closed_loop_evaluation(
     except RuntimeError:
         pass
     device: torch.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    train_config: TrainConfig = load_config_from_artifact_dir(artifact_dir)
-    preprocessor = Preprocessor(data_config=train_config.data)
-    n_workers = eval_config.n_workers
+    preprocessor = Preprocessor(cfg)
+    n_workers = 2  # TODO: make configurable
 
-    # Create events to signal when cpu and gpu workers are ready
+    # create events to signal when cpu and gpu workers are ready
     model_input_ready_flags: List[EventType] = [mp.Event() for _ in range(n_workers)]
     model_output_ready_flags: List[EventType] = [mp.Event() for _ in range(n_workers)]
     # Create events to signal when emulator episodes end
@@ -317,23 +316,22 @@ def run_closed_loop_evaluation(
     gpu_process: mp.Process = mp.Process(
         target=gpu_worker,
         kwargs={
+            'cfg': cfg,
             'shared_batched_model_input_B': shared_batched_model_input_B,
             'shared_batched_model_output_B': shared_batched_model_output_B,
             'model_input_ready_flags': model_input_ready_flags,
             'model_output_ready_flags': model_output_ready_flags,
             'seq_len': preprocessor.seq_len,
             'stop_events': stop_events,
-            'artifact_dir': artifact_dir,
+            'model_weights_path': cfg.paths.runs / 'best_model.pth',
             'device': device,
-            'checkpoint_idx': checkpoint_idx,
             'debug': debug,
         },
     )
     gpu_process.start()
 
-    matchups_distribution = eval_config.matchups_distribution
-    matchups = getattr(Matchup, matchups_distribution)(n_workers)
-    base_replay_dir = get_replay_dir(artifact_dir, step=checkpoint_idx) / matchups_distribution
+    matchups = [Matchup() for _ in range(n_workers)]
+    base_replay_dir = cfg.paths.replays / 'closed_loop_eval'
     logger.info(f'Replays will be saved to {base_replay_dir}')
 
     cpu_processes: List[mp.Process] = []
@@ -345,6 +343,8 @@ def run_closed_loop_evaluation(
         p: mp.Process = mp.Process(
             target=cpu_worker,
             kwargs={
+                'emulator_path': cfg.paths.exe,
+                'iso_path': cfg.paths.iso,
                 'shared_batched_model_input': shared_batched_model_input_B,
                 'shared_batched_model_output': shared_batched_model_output_B,
                 'rank': i,
@@ -384,19 +384,14 @@ def run_closed_loop_evaluation(
         eval_stats_queue.put(total_stats)
 
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Run Melee in emulator')
-    parser.add_argument('--model_dir', type=str, help='Path to model directory')
-    parser.add_argument('--checkpoint_idx', type=int, help='Checkpoint index')
-    parser.add_argument('--n_workers', type=int, help='Number of CPU workers')
-    parser.add_argument('--enable_ffw', action='store_true', help='Enable fast forward mode')
-    parser.add_argument('--debug', action='store_true', help='Enable debug mode')
-    parser.add_argument('--matchups', type=str, default='spacies', help='Matchup distribution')
-    args = parser.parse_args()
+if __name__ == '__main__': mp.set_start_method('spawn', force=True)
+    exposed_args = {'PATHS': 'runs replays', 'BASE': 'debug'}
+    parser = create_parser(exposed_args)
+    cfg = parse_args(parser.parse_args(), __file__)
     run_closed_loop_evaluation(
-        artifact_dir=Path(args.model_dir),
-        checkpoint_idx=args.checkpoint_idx,
-        eval_config=EvalConfig(n_workers=args.n_workers, matchups_distribution=args.matchups),
-        enable_ffw=args.enable_ffw,
-        debug=args.debug,
+        cfg,
+        eval_stats_queue=None,
+        player='p1',
+        enable_ffw=False,
+        debug=cfg.base.debug,
     )
