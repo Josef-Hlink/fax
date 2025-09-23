@@ -58,8 +58,8 @@ def train(cfg: CFG) -> None:
         # save best model
         if own_val_loss < best_val_loss:
             best_val_loss = own_val_loss
-            torch.save(model.state_dict(), cfg.paths.runs / trainer.run_name / 'best_model.pth')
-            logger.info(f'Saved new best model with Val Loss = {best_val_loss:.4f}')
+            torch.save(model.state_dict(), trainer.weights_path / f'{trainer.run_name}.pth')
+            logger.info(f'Saved new best model with val loss = {best_val_loss:.4f}')
 
     if cfg.training.n_finetune_epochs == 0:
         logger.info('No finetuning epochs specified, skipping finetuning.')
@@ -88,9 +88,7 @@ def train(cfg: CFG) -> None:
         # save best model
         if fvf_val_loss < best_val_loss:
             best_val_loss = fvf_val_loss
-            torch.save(
-                model.state_dict(), cfg.paths.runs / trainer.run_name / 'best_model_finetuned.pth'
-            )
+            torch.save(model.state_dict(), trainer.ft_weights_path / f'{trainer.run_name}.pth')
             logger.info(f'Saved new best finetuned model with Val Loss = {best_val_loss:.4f}')
 
     return
@@ -103,8 +101,14 @@ class Trainer(torch.nn.Module):
         self.model = model
 
         self.run_name = f'{get_name()}-{random.randint(0, 1000):03d}'
-        if not (cfg.paths.runs / self.run_name).exists():
-            (cfg.paths.runs / self.run_name).mkdir(parents=True, exist_ok=True)
+        # run type is like '1k-FvF' or '100-FvX'
+        run_type = '1k' if cfg.training.n_epochs == 1000 else str(cfg.training.n_epochs)
+        run_type += f'-{cfg.training.matchup}'
+        self.weights_path = cfg.paths.weights / run_type
+        self.ft_weights_path = cfg.paths.weights / f'{run_type}-ft'
+        self.weights_path.mkdir(parents=True, exist_ok=True)
+        self.ft_weights_path.mkdir(parents=True, exist_ok=True)
+
         logger.info(f'Run name: {self.run_name}')
         self.writer: WandbWriter | DummyWriter = DummyWriter(cfg, self.run_name)
         if cfg.base.wandb:
@@ -131,7 +135,6 @@ class Trainer(torch.nn.Module):
         """
         self.model.train()
         total_loss = 0.0
-        # clean_stale_shared_memory()
 
         for batch in tqdm(train_loader, desc=f'epoch {epoch}/{n_epochs}'):
             inputs = batch['inputs'].to(self.device)
@@ -159,7 +162,6 @@ class Trainer(torch.nn.Module):
         """
         self.model.eval()
         total_loss = 0.0
-        # clean_stale_shared_memory()
 
         with torch.no_grad():
             for batch in tqdm(val_loader, desc=f'validating'):

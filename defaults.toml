@@ -5,8 +5,8 @@ zips = "~/Data/ssd2/zips/ranked-anonymized-*.zip"  # 1-3
 slp = "~/Data/fax/ranked-anonymized/"
 sql = "~/Data/fax/index.db"
 mds = "~/Data/fax/mds/"
-runs = "~/Data/fax/runs/"
 logs = "~/Data/fax/logs/"
+weights = "~/Data/fax/weights/"
 replays = "~/Data/fax/replays/"
 dolphin-home = "~/.config/SlippiPlayback/"
 [BASE]

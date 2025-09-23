@@ -6,6 +6,7 @@ Run closed loop evaluation of a model in the emulator.
 Largely copied from https://github.com/ericyuegu/hal
 """
 
+import random
 import time
 import traceback
 from multiprocessing.synchronize import Event as EventType
@@ -18,7 +19,7 @@ import torch.multiprocessing as mp
 from loguru import logger
 from tensordict import TensorDict
 
-from fax.config import CFG, create_parser, parse_args
+from fax.config import CFG, create_parser, parse_args, setup_logger
 from fax.model import Model
 from fax.utils.constants import Player
 from fax.utils.emulator_helper import EmulatorManager, find_open_udp_ports, Matchup
@@ -28,6 +29,7 @@ from fax.processing.preprocessor import Preprocessor
 
 
 def cpu_worker(
+    cfg: CFG,
     emulator_path: Path,
     iso_path: Path,
     shared_batched_model_input: TensorDict,
@@ -49,6 +51,7 @@ def cpu_worker(
     and sends controller inputs to the emulator from model predictions.
     """
 
+    setup_logger(Path(cfg.paths.logs) / Path(__file__).name.replace('.py', '.log'), debug=debug)
     with logger.contextualize(rank=rank):
         emulator_manager = EmulatorManager(
             udp_port=port,
@@ -130,6 +133,7 @@ def gpu_worker(
     GPU worker that batches data from shared memory, updates the context window,
     performs inference with model, and writes output back to shared memory.
     """
+    setup_logger(Path(cfg.paths.logs) / Path(__file__).name.replace('.py', '.log'), debug=debug)
     torch.set_float32_matmul_precision('high')
     preprocessor = Preprocessor(cfg)
     model = Model(preprocessor, cfg)
@@ -281,6 +285,7 @@ def run_closed_loop_evaluation(
         p: mp.Process = mp.Process(
             target=cpu_worker,
             kwargs={
+                'cfg': cfg,
                 'emulator_path': cfg.paths.exe,
                 'iso_path': cfg.paths.iso,
                 'shared_batched_model_input': shared_batched_model_input_B,
@@ -361,14 +366,16 @@ def flatten_replay_dir(replay_dir: Path) -> None:
 
 
 if __name__ == '__main__':
-    exposed_args = {'PATHS': 'runs replays', 'BASE': 'debug', 'EVAL': 'p1-type p2-type n-loops'}
+    exposed_args = {'PATHS': 'weights replays', 'BASE': 'debug', 'EVAL': 'p1-type p2-type n-loops'}
     parser = create_parser(exposed_args)
     cfg = parse_args(parser.parse_args(), __file__)
+
+    # choose random candidate weights from specified run type
+    p1_weights_path = random.choice(list((cfg.paths.weights / cfg.eval.p1_type).glob('*.pth')))
 
     # every loop will generate ~2x n_workers replays
     for i in range(cfg.eval.n_loops):
         logger.info(f'CLE loop {i + 1}/{cfg.eval.n_loops}')
-        p1_weights_path = cfg.paths.runs / cfg.eval.p1_type / 'best_model.pth'
         run_closed_loop_evaluation(
             cfg,
             p1_weights_path=p1_weights_path,

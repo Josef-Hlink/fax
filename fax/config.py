@@ -24,8 +24,8 @@ class PathsCFG:
     slp: Path
     sql: Path
     mds: Path
-    runs: Path
     logs: Path
+    weights: Path
     replays: Path
     dolphin_home: Path
 
@@ -229,7 +229,7 @@ def debug_enabled() -> bool:
 
 if __name__ == '__main__':
     exposed_args = {
-        'PATHS': 'iso exe zips slp sql mds runs logs replays dolphin-home',
+        'PATHS': 'iso exe zips slp sql mds weights logs replays dolphin-home',
         'BASE': 'seed debug wandb n-gpus',
         'MODEL': 'n-layers n-heads seq-len emb-dim dropout gamma',
         'OPTIM': 'lr wd b1 b2',
