@@ -143,7 +143,7 @@ def process_replays(replay_paths: list[Path], mds_dir: Path) -> None:
 
 
 if __name__ == '__main__':
-    exposed_args = {'PATHS': 'slp mds', 'TRAINING': 'n-samples', 'BASE': 'seed debug'}
+    exposed_args = {'PATHS': 'slp mds', 'BASE': 'seed debug', 'TRAINING': 'n-samples'}
     parser = create_parser(exposed_args)
     cfg = parse_args(parser.parse_args(), __file__)
 

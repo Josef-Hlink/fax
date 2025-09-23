@@ -14,16 +14,6 @@ seed = "Random seed that will be set at the start of anything involving stochast
 debug = "If true, will run in debug mode for more verbose logging."
 wandb = "If true, will log training metrics to Weights & Biases."
 n-gpus = "Number of GPUs to use for training. Set to 0 for CPU training."  # TODO: support >1
-[TRAINING]
-batch-size = "Number of samples to be propagated through the network at once during training and evaluation."
-n-epochs = "Number of epochs to train for. Validation happens at the end of each epoch."
-n-samples = """
-    Number of training samples to draw from the dataset for each epoch.
-    This parameter is also used to determine the number of .slp files to load from the zip archives,
-    this way we sample exactly one sequence from each episode (replay).
-"""
-n-val-samples = "Number of samples to use for validation at the end of each epoch."
-n-dataworkers = "Number of subprocesses MosaicML will use to load data."
 [MODEL]
 n-layers = "Number of transformer layers."
 n-heads = "Number of attention heads in each transformer layer."
@@ -36,7 +26,16 @@ lr = "Learning rate."  # TODO: refer to docs for these params
 wd = "Weight decay."
 b1 = "Adam optimizer beta1 parameter."
 b2 = "Adam optimizer beta2 parameter."
-[EXP]
+[TRAINING]
+batch-size = "Number of samples to be propagated through the network at once during training and evaluation."
+n-epochs = "Number of epochs to train for. Validation happens at the end of each epoch."
+n-samples = """
+    Number of training samples to draw from the dataset for each epoch.
+    This parameter is also used to determine the number of .slp files to load from the zip archives,
+    this way we sample exactly one sequence from each episode (replay).
+"""
+n-val-samples = "Number of samples to use for validation at the end of each epoch."
+n-dataworkers = "Number of subprocesses MosaicML will use to load data."
 matchup = "Type of data the agent will be trained on. Options are FvF, FvX, XvF, XvX."
 n-finetune-epochs = "Number of finetuning epochs to perform after the main training is complete."
 finetune-lr-frac = "Fraction of the original learning rate to initialize the finetuning learning rate."

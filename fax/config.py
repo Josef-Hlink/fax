@@ -45,15 +45,23 @@ class TrainingCFG:
     n_samples: int
     n_val_samples: int
     n_dataworkers: int
+    matchup: str
+    n_finetune_epochs: int
+    finetune_lr_frac: float
 
     def __attrs_post_init__(self):
-        """Validate that batch_size, n_samples, and n_val_samples are powers of 2."""
+        """Validate batch_size, n_samples, n_val_samples, and matchup."""
+        # powers of 2 checks
         if self.batch_size & (self.batch_size - 1) != 0:
             raise ValueError(f'batch_size must be a power of 2, got {self.batch_size}')
         if self.n_samples & (self.n_samples - 1) != 0:
             raise ValueError(f'n_samples must be a power of 2, got {self.n_samples}')
         if self.n_val_samples & (self.n_val_samples - 1) != 0:
             raise ValueError(f'n_val_samples must be a power of 2, got {self.n_val_samples}')
+        # matchup checks
+        allowed_matchups = ['FvF', 'FvX', 'XvF', 'XvX']
+        if self.matchup not in allowed_matchups:
+            raise ValueError(f'matchup must be one of {allowed_matchups}, got {self.matchup}')
 
 
 @attr.s(auto_attribs=True, frozen=True)
@@ -75,19 +83,6 @@ class OptimCFG:
 
 
 @attr.s(auto_attribs=True, frozen=True)
-class ExpCFG:
-    matchup: str
-    n_finetune_epochs: int
-    finetune_lr_frac: float
-
-    def __attrs_post_init__(self):
-        """Validate that matchup is valid."""
-        allowed_matchups = ['FvF', 'FvX', 'XvF', 'XvX']
-        if self.matchup not in allowed_matchups:
-            raise ValueError(f'matchup must be one of {allowed_matchups}, got {self.matchup}')
-
-
-@attr.s(auto_attribs=True, frozen=True)
 class EvalCFG:
     p1_type: str
     p2_type: str
@@ -101,7 +96,6 @@ class CFG:
     training: TrainingCFG
     model: ModelCFG
     optim: OptimCFG
-    exp: ExpCFG
     eval: EvalCFG
 
     def to_dict(self) -> dict:
@@ -112,7 +106,6 @@ class CFG:
             'training': attr.asdict(self.training),
             'model': attr.asdict(self.model),
             'optim': attr.asdict(self.optim),
-            'exp': attr.asdict(self.exp),
             'eval': attr.asdict(self.eval),
         }
 
@@ -200,7 +193,6 @@ def parse_args(args: Namespace, caller: str) -> CFG:
         training=build('TRAINING', TrainingCFG),
         model=build('MODEL', ModelCFG),
         optim=build('OPTIM', OptimCFG),
-        exp=build('EXP', ExpCFG),
         eval=build('EVAL', EvalCFG),
     )
     setup_logger(Path(f'{cfg.paths.logs / Path(caller).stem}.log'), debug=cfg.base.debug)
@@ -239,10 +231,9 @@ if __name__ == '__main__':
     exposed_args = {
         'PATHS': 'iso exe zips slp sql mds runs logs replays dolphin-home',
         'BASE': 'seed debug wandb n-gpus',
-        'TRAINING': 'batch-size n-epochs n-samples n-val-samples n-dataworkers',
         'MODEL': 'n-layers n-heads seq-len emb-dim dropout gamma',
         'OPTIM': 'lr wd b1 b2',
-        'EXP': '*',  # NOTE: this exposes all exp args
+        'TRAINING': '*',  # NOTE: this exposes all exp args
         'EVAL': 'p1-type p2-type n-loops',
     }
     parser = create_parser(exposed_args)

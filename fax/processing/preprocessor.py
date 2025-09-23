@@ -36,7 +36,7 @@ class Preprocessor:
 
     def __init__(self, cfg: CFG) -> None:
         self.cfg = cfg
-        dataset_path = cfg.paths.mds / MATCHUP_TO_BUCKET[cfg.exp.matchup] / 'train'
+        dataset_path = cfg.paths.mds / MATCHUP_TO_BUCKET[cfg.training.matchup] / 'train'
         self.stats = load_dataset_stats(dataset_path)
         self.normalization_fn_by_feature_name: Dict[str, Transformation] = {}  # TODO: check used
         self.seq_len = cfg.model.seq_len

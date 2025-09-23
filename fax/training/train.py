@@ -15,7 +15,6 @@ import torch.nn.functional as F
 from loguru import logger
 from randomname import get_name
 from streaming import StreamingDataLoader
-from streaming.base.util import clean_stale_shared_memory
 from tensordict import TensorDict
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
@@ -36,7 +35,7 @@ def train(cfg: CFG) -> None:
     logger.info(f'Model has {sum(p.numel() for p in model.parameters()):,} parameters.')
 
     # get dataloaders
-    own_train_loader, own_val_loader = get_dataloaders(cfg, cfg.exp.matchup)
+    own_train_loader, own_val_loader = get_dataloaders(cfg, cfg.training.matchup)
     fvf_train_loader, fvf_val_loader = get_dataloaders(cfg, 'FvF')
 
     # initialize trainer
@@ -62,7 +61,7 @@ def train(cfg: CFG) -> None:
             torch.save(model.state_dict(), cfg.paths.runs / trainer.run_name / 'best_model.pth')
             logger.info(f'Saved new best model with Val Loss = {best_val_loss:.4f}')
 
-    if cfg.exp.n_finetune_epochs == 0:
+    if cfg.training.n_finetune_epochs == 0:
         logger.info('No finetuning epochs specified, skipping finetuning.')
         trainer.writer.finish()
         logger.info('Training complete.')
@@ -72,15 +71,15 @@ def train(cfg: CFG) -> None:
     logger.info('Initial training regiment completed. Starting finetuning phase...')
     trainer.optimizer = AdamW(
         model.parameters(),
-        lr=cfg.optim.lr * cfg.exp.finetune_lr_frac,
+        lr=cfg.optim.lr * cfg.training.finetune_lr_frac,
         weight_decay=cfg.optim.wd,
         betas=(cfg.optim.b1, cfg.optim.b2),
     )
-    total_steps = cfg.exp.n_finetune_epochs * cfg.training.n_samples // cfg.training.batch_size
+    total_steps = cfg.training.n_finetune_epochs * cfg.training.n_samples // cfg.training.batch_size
     trainer.scheduler = CosineAnnealingLR(trainer.optimizer, T_max=total_steps, eta_min=1e-6)
     best_val_loss = float('inf')
-    for epoch in range(1, cfg.exp.n_finetune_epochs + 1):
-        train_loss = trainer.train_epoch(fvf_train_loader, epoch, cfg.exp.n_finetune_epochs)
+    for epoch in range(1, cfg.training.n_finetune_epochs + 1):
+        train_loss = trainer.train_epoch(fvf_train_loader, epoch, cfg.training.n_finetune_epochs)
         fvf_val_loss = trainer.validate(fvf_val_loader)
 
         logger.info(f'Finetune epoch {epoch}: tl = {train_loss:.4f}, fvf vl = {fvf_val_loss:.4f}')
@@ -210,12 +209,11 @@ if __name__ == '__main__':
     exposed_args = {
         'PATHS': 'mds',
         'BASE': 'seed debug wandb n-gpus',
-        'TRAINING': 'batch-size n-epochs n-samples n-val-samples n-dataworkers',
         'MODEL': 'n-layers n-heads seq-len emb-dim dropout gamma',
         'OPTIM': 'lr wd b1 b2',
-        'EXP': 'matchup n-finetune-epochs finetune-lr-frac',
+        'TRAINING': '*',  # NOTE: this exposes all exp args
     }
     parser = create_parser(exposed_args)
     cfg = parse_args(parser.parse_args(), __file__)
-    assert cfg.exp.matchup is not None, 'Matchup must be specified for training.'
+    assert cfg.training.matchup is not None, 'Matchup must be specified.'
     train(cfg)

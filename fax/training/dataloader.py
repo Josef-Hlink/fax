@@ -133,10 +133,16 @@ def get_dataloaders(cfg: CFG, matchup: str) -> Tuple[StreamingDataLoader, Stream
 
 
 if __name__ == '__main__':
-    exposed_args = {'PATHS': 'mds', 'TRAINING': 'batch-size', 'MODEL': 'seq-len', 'EXP': 'matchup'}
+    exposed_args = {
+        'PATHS': 'mds',
+        'BASE': 'seed debug wandb n-gpus',
+        'MODEL': 'n-layers n-heads seq-len emb-dim dropout gamma',
+        'OPTIM': 'lr wd b1 b2',
+        'TRAINING': 'batch-size matchup',
+    }
     parser = create_parser(exposed_args)
     cfg = parse_args(parser.parse_args(), __file__)
-    train_loader, val_loader = get_dataloaders(cfg=cfg, matchup=cfg.exp.matchup)
+    train_loader, val_loader = get_dataloaders(cfg=cfg, matchup=cfg.training.matchup)
 
     for i, batch in enumerate(train_loader):
         print(f'Batch #{i + 1}:')

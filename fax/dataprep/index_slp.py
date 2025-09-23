@@ -97,8 +97,8 @@ def maybe_gunzip(path: Path) -> Path:
 if __name__ == '__main__':
     exposed_args = {
         'PATHS': 'zips slp sql',
-        'TRAINING': 'n-samples n-val-samples',
         'BASE': 'debug',
+        'TRAINING': 'n-samples n-val-samples',
     }
     parser = create_parser(exposed_args)
     cfg = parse_args(parser.parse_args(), __file__)
