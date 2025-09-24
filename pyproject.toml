@@ -16,6 +16,7 @@ dependencies = [
     "melee",
     "mosaicml-streaming>=0.13.0",
     "numpy<2.0",
+    "pandas>=2.3.2",
     "psutil>=7.0.0",
     "randomname>=0.2.1",
     "ruff>=0.11.8",
