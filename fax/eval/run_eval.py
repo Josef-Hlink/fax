@@ -43,7 +43,6 @@ def cpu_worker(
     model_input_ready_flag: EventType,
     model_output_ready_flag: EventType,
     stop_event: EventType,
-    enable_ffw: bool = True,
     debug: bool = False,
 ) -> None:
     """
@@ -60,7 +59,7 @@ def cpu_worker(
             replay_dir=replay_dir,
             opponent_cpu_level=9,
             matchup=matchup,
-            enable_ffw=enable_ffw,
+            enable_ffw=False,
             debug=debug,
         )
         try:
@@ -228,7 +227,6 @@ def run_closed_loop_evaluation(
     cfg: CFG,
     p1_weights_path: Path,
     player: Player = 'p1',
-    enable_ffw: bool = False,
     debug: bool = False,
 ) -> None:
     mp.set_start_method('spawn', force=True)
@@ -273,8 +271,17 @@ def run_closed_loop_evaluation(
     )
     gpu_process.start()
 
-    matchups = [Matchup() for _ in range(n_workers)]
-    base_replay_dir = cfg.paths.replays / 'cle' / f'{cfg.eval.p1_type}_vs_{cfg.eval.p2_type}'
+    matchups = [
+        Matchup('BATTLEFIELD', cfg.eval.character, cfg.eval.character) for _ in range(n_workers)
+    ]
+    # for example, ~/Data/fax/replays/eval/MARTH/FvX-ft_vs_cpu
+    base_replay_dir = (
+        cfg.paths.replays
+        / 'eval'
+        / cfg.eval.character
+        / f'{cfg.eval.p1_type}_vs_{cfg.eval.p2_type}'
+    )
+    base_replay_dir.mkdir(exist_ok=True, parents=True)
     logger.debug(f'Replays will be saved to {base_replay_dir}')
 
     cpu_processes: List[mp.Process] = []
@@ -299,7 +306,6 @@ def run_closed_loop_evaluation(
                 'model_input_ready_flag': model_input_ready_flags[i],
                 'model_output_ready_flag': model_output_ready_flags[i],
                 'stop_event': stop_events[i],
-                'enable_ffw': enable_ffw,
                 'debug': debug,
             },
         )
@@ -366,7 +372,11 @@ def flatten_replay_dir(replay_dir: Path) -> None:
 
 
 if __name__ == '__main__':
-    exposed_args = {'PATHS': 'weights replays', 'BASE': 'debug', 'EVAL': 'p1-type p2-type n-loops'}
+    exposed_args = {
+        'PATHS': 'weights replays',
+        'BASE': 'debug',
+        'EVAL': 'p1-type p2-type n-loops character',
+    }
     parser = create_parser(exposed_args)
     cfg = parse_args(parser.parse_args(), __file__)
 
@@ -380,6 +390,5 @@ if __name__ == '__main__':
             cfg,
             p1_weights_path=p1_weights_path,
             player='p1',
-            enable_ffw=False,
             debug=cfg.base.debug,
         )

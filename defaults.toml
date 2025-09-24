@@ -39,3 +39,4 @@ finetune-lr-frac = 0.5
 p1-type = "1k-FvF-ft"
 p2-type = "cpu"
 n-loops = 5
+character = "FOX"

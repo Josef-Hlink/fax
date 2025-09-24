@@ -87,6 +87,7 @@ class EvalCFG:
     p1_type: str
     p2_type: str
     n_loops: int
+    character: str
 
 
 @attr.s(auto_attribs=True, frozen=True)
@@ -200,6 +201,11 @@ def parse_args(args: Namespace, caller: str) -> CFG:
         for key, value in section.__dict__.items():
             logger.debug(f'Config {section_name}.{key} = {value}')
     return cfg
+
+
+def get_cfg_defaults() -> CFG:
+    """Get the default configuration as a CFG object."""
+    return parse_args(Namespace(), caller=__file__)
 
 
 _DEBUG_ENABLED = False
