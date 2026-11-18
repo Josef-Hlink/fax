@@ -31,8 +31,8 @@ def process_zip_arch(arch_file: Path, out_dir: Path, db_path: Path, bucket_limit
         bucket_limit: Maximum number of files per bucket.
     """
     # make a temporary directory for extraction right next to archive
-    # so we're sure it's on the same disk
-    if (tmp := arch_file.parent / 'tmp').exists():
+    # so we're sure it's on the same disk (named so we never wipe someone's unrelated 'tmp')
+    if (tmp := arch_file.parent / 'fax-index-tmp').exists():
         shutil.rmtree(tmp)
     tmp.mkdir(parents=True, exist_ok=True)
     # make sure output directories exist
