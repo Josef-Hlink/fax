@@ -7,8 +7,10 @@ Largely copied from https://github.com/ericyuegu/hal
 """
 
 import concurrent.futures
+import fcntl
 import signal
 import sys
+import tempfile
 import traceback
 from contextlib import contextmanager
 from pathlib import Path
@@ -26,18 +28,45 @@ def _get_console_port(player: Player) -> int:
     return PLAYER_1_PORT if player == 'p1' else PLAYER_2_PORT
 
 
+# lock files of the ports this process has reserved, see `find_open_udp_ports`
+_reserved_ports: Dict[int, IO[str]] = {}
+
+
 def find_open_udp_ports(n: int, min_port=1024, max_port=65535) -> list[int]:
-    """Only tested on Linux."""
+    """
+    Find `n` free UDP ports and reserve them for this process. Only tested on Linux.
+
+    A port only shows up as used once an emulator has bound it, seconds after we picked it, so
+    two evaluations started at the same time would pick the same ports and read each other's
+    games. Every port is therefore also claimed with a lock file, which is held until the next
+    call from this process or until it exits.
+    """
+    for lock_file in _reserved_ports.values():
+        lock_file.close()  # closing releases the lock
+    _reserved_ports.clear()
+
     used_ports = set()
     for conn in psutil.net_connections(kind='udp'):
         if conn.laddr and isinstance(conn.laddr, tuple):
             used_ports.add(conn.laddr[1])  # laddr = (ip, port)
+
+    lock_dir = Path(tempfile.gettempdir()) / 'fax-eval-ports'
+    lock_dir.mkdir(exist_ok=True)
     open_ports = []
     for port in range(min_port, max_port):
-        if port not in used_ports:
-            open_ports.append(port)
         if len(open_ports) == n:
             break
+        if port in used_ports:
+            continue
+        lock_file = open(lock_dir / f'{port}.lock', 'w')
+        try:
+            fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:  # reserved by another evaluation
+            lock_file.close()
+            continue
+        _reserved_ports[port] = lock_file
+        open_ports.append(port)
+    assert len(open_ports) == n, f'Only found {len(open_ports)} of {n} free UDP ports'
     return open_ports
 
 
