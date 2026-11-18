@@ -48,7 +48,7 @@ class DataBase:
             )
         """)
         self.conn.commit()
-        logger.debug('Created ranked_replays table')
+        logger.debug('Created replays table')
         return
 
     def insert_replay(self, record: TrainReplayRecord) -> None:
@@ -116,7 +116,7 @@ class DataBase:
             p2char = CHARACTER_NAME_TO_ID[p2char.upper()]
         self.cursor.execute(
             """
-            SELECT file_name FROM ranked_replays
+            SELECT file_name FROM replays
             WHERE (p1char = ? AND p2char = ?)
                OR (p1char = ? AND p2char = ?)
         """,
