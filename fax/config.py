@@ -1,3 +1,4 @@
+import os
 import sys
 import tomllib
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser, Namespace
@@ -14,6 +15,11 @@ with open(_PROJ / 'defaults.toml', 'rb') as f:
     DEFAULTS = tomllib.load(f)
 with open(_PROJ / 'help.toml', 'rb') as f:
     HELP = tomllib.load(f)
+
+
+def _path(p: str | Path) -> Path:
+    """Expand env vars (e.g. $XDG_DEVELOPER_DIR) and ~ in a path, and make it absolute."""
+    return Path(os.path.expandvars(p)).expanduser().resolve()
 
 
 @attr.s(auto_attribs=True, frozen=True)
@@ -135,11 +141,11 @@ def create_parser(argnames: Dict[str, str]) -> ArgumentParser:
                         arg_name,
                         type=Path,
                         nargs='+',
-                        default=[Path(d).expanduser().resolve() for d in default],
+                        default=[_path(d) for d in default],
                         help=help_msg,
                     )
                     continue
-                default = Path(default).expanduser().resolve()
+                default = _path(default)
             if isinstance(default, bool):
                 parser.add_argument(arg_name, action='store_true', help=help_msg)
             else:
@@ -172,15 +178,15 @@ def parse_args(args: Namespace, caller: str) -> CFG:
                 val = DEFAULTS.get(section, {}).get(toml_key)
             # cast to Path object
             if field.type is Path:
-                val = Path(val).expanduser().resolve()
+                val = _path(val)
             # for zips: List[Path] with globbing
             elif get_origin(field.type) is list and get_args(field.type)[0] == Path:
                 # normalize: allow str or list[str|Path]
                 raw_vals = val if isinstance(val, list) else [val]
                 _val = []
                 for v in raw_vals:
-                    v_path = Path(v).expanduser().resolve()  # works whether str or Path
-                    _val.extend([Path(p).expanduser().resolve() for p in glob(v_path.as_posix())])
+                    v_path = _path(v)  # works whether str or Path
+                    _val.extend([_path(p) for p in glob(v_path.as_posix())])
                 val = _val
             # int, float, bool (and possibly str but we don't use those)
             elif field.type is not None:

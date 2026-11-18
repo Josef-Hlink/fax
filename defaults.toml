@@ -1,13 +1,13 @@
 [PATHS]
-iso = "~/Data/fax/Super Smash Bros. Melee (USA) (En,Ja) (v1.02).iso"
-exe = "~/Data/fax/Slippi_Online-x86_64-ExiAI.AppImage"
-zips = "~/Data/ssd2/zips/ranked-anonymized-*.zip"  # 1-3
-slp = "~/Data/fax/ranked-anonymized/"
-sql = "~/Data/fax/index.db"
-mds = "~/Data/fax/mds/"
-logs = "~/Data/fax/logs/"
-weights = "~/Data/fax/weights/"
-replays = "~/Data/fax/replays/"
+iso = "$XDG_DEVELOPER_DIR/own/fax/data/Super Smash Bros. Melee (USA) (En,Ja) (v1.02).iso"
+exe = "$XDG_DEVELOPER_DIR/own/fax/data/Slippi_Online-x86_64-ExiAI.AppImage"
+zips = "/data/zips/ranked-anonymized-*.zip"  # 1-3
+slp = "$XDG_DEVELOPER_DIR/own/fax/data/ranked-anonymized/"
+sql = "$XDG_DEVELOPER_DIR/own/fax/data/index.db"
+mds = "$XDG_DEVELOPER_DIR/own/fax/data/mds/"
+logs = "$XDG_DEVELOPER_DIR/own/fax/data/logs/"
+weights = "$XDG_DEVELOPER_DIR/own/fax/data/weights/"
+replays = "$XDG_DEVELOPER_DIR/own/fax/data/replays/"
 dolphin-home = "~/.config/SlippiPlayback/"
 [BASE]
 seed = 42
