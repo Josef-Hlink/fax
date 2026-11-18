@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import tempfile
+from pathlib import Path
 from typing import Any, Optional, Sequence, Tuple
 
 import torch
+from filelock import FileLock
 from streaming import StreamingDataLoader, StreamingDataset
-from streaming.base.util import clean_stale_shared_memory
 from tensordict import TensorDict
 
 from fax.config import CFG, create_parser, parse_args
@@ -98,15 +100,21 @@ def get_dataloaders(cfg: CFG, matchup: str) -> Tuple[StreamingDataLoader, Stream
         matchup: Matchup string to determine which MDS bucket to use.
 
     Returns:
-        Tuple of (train_loader, val_loader, test_loader)
+        Tuple of (train_loader, val_loader)
     """
 
-    # clean stale shared memory
-    clean_stale_shared_memory()
+    # NOTE: do not call streaming's clean_stale_shared_memory() here; it also wipes the shared
+    # memory of datasets that are alive, in this process and in any other training run on the
+    # same machine. /dev/shm is shared by everything on a node, so with two jobs on one node the
+    # second can get handed the shm names the first is still using, which then crashes one of
+    # them with FileExistsError: '/000001_epoch_shape' at the start of some epoch
 
-    # create datasets
-    train_dataset = FAXStreamingDataset(cfg, matchup, split='train')
-    val_dataset = FAXStreamingDataset(cfg, matchup, split='val')
+    # create datasets; streaming picks a free shm prefix and only then claims it, without a lock,
+    # so two training runs that get here at the same moment pick the same one and all but one of
+    # them crash with FileExistsError: '/0000xx_locals'. Hence one run at a time
+    with FileLock(Path(tempfile.gettempdir()) / 'fax-streaming-dataset.lock'):
+        train_dataset = FAXStreamingDataset(cfg, matchup, split='train')
+        val_dataset = FAXStreamingDataset(cfg, matchup, split='val')
 
     # create dataloaders
     train_loader = StreamingDataLoader(
