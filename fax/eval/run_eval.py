@@ -44,6 +44,7 @@ def cpu_worker(
     preprocessor: Preprocessor,
     model_input_ready_flag: EventType,
     model_output_ready_flag: EventType,
+    new_game_flag: EventType,
     stop_event: EventType,
     debug: bool = False,
 ) -> None:
@@ -76,9 +77,16 @@ def cpu_worker(
 
             # only show progress bar for one worker to avoid clutter
             iterator = trange(99999, desc=f'CPU worker 1') if rank == 1 else range(99999)
+            prev_frame = gamestate.frame
             for _ in iterator:
                 if gamestate is None:
                     break
+
+                # the frame counter starts over with every game; tell the GPU worker, so the
+                # agent does not start a game looking at the end of the previous one
+                if gamestate.frame < prev_frame:
+                    new_game_flag.set()
+                prev_frame = gamestate.frame
 
                 gamestate_td = extract_eval_gamestate_as_tensordict(gamestate)
                 model_inputs = preprocessor.preprocess_inputs(gamestate_td, player)
@@ -143,6 +151,7 @@ def _gpu_worker(
     shared_batched_model_output_B: TensorDict,  # (n_workers,)
     model_input_ready_flags: List[EventType],
     model_output_ready_flags: List[EventType],
+    new_game_flags: List[EventType],
     seq_len: int,
     stop_events: List[EventType],
     p1_weights_path: Path,
@@ -200,6 +209,12 @@ def _gpu_worker(
     # longer timeout on init to allow for emulators to start
     wait_for_cpu_workers(timeout=30.0)
 
+    # every worker has its own position in the context window, which goes back to the start
+    # when its emulator begins a new game
+    n_workers = len(stop_events)
+    rows_B = torch.arange(n_workers, device=device)
+    n_frames_B = torch.zeros(n_workers, dtype=torch.long, device=device)
+
     i = 0
     while not all(event.is_set() for event in stop_events):
         iteration_start = time.perf_counter()
@@ -209,26 +224,33 @@ def _gpu_worker(
         if all(event.is_set() for event in stop_events):
             break
 
+        for rank, new_game_flag in enumerate(new_game_flags):
+            if new_game_flag.is_set():
+                new_game_flag.clear()
+                n_frames_B[rank] = 0
+                logger.debug(f'Worker {rank} started a new game, context window cleared')
+
         transfer_start = time.perf_counter()
-        if i < seq_len:
-            # while context window is not full, fill in from the left
-            context_window_BL[:, i].copy_(shared_batched_model_input_B, non_blocking=True)
-        else:
-            # update the context window by rolling frame data left and adding new data on the right
-            context_window_BL[:, :-1].copy_(context_window_BL[:, 1:].clone())
-            context_window_BL[:, -1].copy_(shared_batched_model_input_B, non_blocking=True)
+        # while a worker's context window is not full, fill it in from the left; after that,
+        # roll its frame data left and add the new data on the right
+        full_B = n_frames_B >= seq_len
+        seq_idx_B = n_frames_B.clamp(max=seq_len - 1)
+        for key, window in context_window_BL.items():
+            if full_B.any():
+                window[full_B, :-1] = window[full_B, 1:].clone()
+            window[rows_B, seq_idx_B] = shared_batched_model_input_B[key].to(device)
+        n_frames_B += 1
         transfer_time = time.perf_counter() - transfer_start
 
         inference_start = time.perf_counter()
         with torch.no_grad():
             outputs_BL: TensorDict = model(context_window_BL)
-        seq_idx = min(seq_len - 1, i)
-        outputs_B: TensorDict = outputs_BL[:, seq_idx]
         inference_time = time.perf_counter() - inference_start
 
         writeback_start = time.perf_counter()
-        # write last frame of model preds to shared buffer
-        shared_batched_model_output_B.copy_(outputs_B)
+        # write each worker's newest frame of model preds to shared buffer
+        for key, output in outputs_BL.items():
+            shared_batched_model_output_B[key].copy_(output[rows_B, seq_idx_B])
         writeback_time = time.perf_counter() - writeback_start
 
         total_time = time.perf_counter() - iteration_start
@@ -269,6 +291,7 @@ def run_closed_loop_evaluation(
     # create events to signal when cpu and gpu workers are ready
     model_input_ready_flags: List[EventType] = [mp.Event() for _ in range(n_workers)]
     model_output_ready_flags: List[EventType] = [mp.Event() for _ in range(n_workers)]
+    new_game_flags: List[EventType] = [mp.Event() for _ in range(n_workers)]
     # Create events to signal when emulator episodes end
     stop_events: List[EventType] = [mp.Event() for _ in range(n_workers)]
 
@@ -294,6 +317,7 @@ def run_closed_loop_evaluation(
             'shared_batched_model_output_B': shared_batched_model_output_B,
             'model_input_ready_flags': model_input_ready_flags,
             'model_output_ready_flags': model_output_ready_flags,
+            'new_game_flags': new_game_flags,
             'seq_len': preprocessor.seq_len,
             'stop_events': stop_events,
             'p1_weights_path': p1_weights_path,
@@ -338,6 +362,7 @@ def run_closed_loop_evaluation(
                 'preprocessor': preprocessor,
                 'model_input_ready_flag': model_input_ready_flags[i],
                 'model_output_ready_flag': model_output_ready_flags[i],
+                'new_game_flag': new_game_flags[i],
                 'stop_event': stop_events[i],
                 'debug': debug,
             },
