@@ -108,40 +108,28 @@ def convert_multi_hot_to_one_hot(buttons_LD: np.ndarray) -> np.ndarray:
     """
     assert buttons_LD.ndim == 2, 'Input array must be 2D'
     _, D = buttons_LD.shape
-    row_sums = buttons_LD.sum(axis=1)
-    multi_pressed = np.argwhere(row_sums > 1).flatten()
-    prev_buttons = set()
-    if len(multi_pressed) > 0:
-        first_multi_pressed = multi_pressed[0]
-        prev_buttons = (
-            set(np.where(buttons_LD[first_multi_pressed - 1] == 1)[0])
-            if first_multi_pressed > 0
-            else set()
-        )
+    no_button = D - 1
 
-    for i in multi_pressed:
-        curr_press = buttons_LD[i]
-        curr_buttons = set(np.where(curr_press == 1)[0])
+    # one bitmask of held buttons per time step (the last column means "no button")
+    held_L = (buttons_LD[:, :no_button].astype(np.int64) << np.arange(no_button)).sum(axis=1)
 
-        if curr_buttons == prev_buttons:
-            buttons_LD[i] = buttons_LD[i - 1]
-            continue
-        elif curr_buttons > prev_buttons:
-            new_button_idx = min(curr_buttons - prev_buttons)
-            buttons_LD[i] = np.zeros(D)
-            buttons_LD[i, new_button_idx] = 1
-            prev_buttons = curr_buttons
-        else:
-            new_button_idx = min(curr_buttons)
-            buttons_LD[i] = np.zeros(D)
-            buttons_LD[i, new_button_idx] = 1
-            prev_buttons = curr_buttons
+    # the held buttons have to be compared with the previous time step on *every* row; only
+    # doing so on rows with several buttons held makes a repeated combination (e.g. the second
+    # jump -> shoulder of two wavedashes) look like nothing new was pressed
+    chosen_L = np.empty(len(held_L), dtype=np.int64)
+    prev, active = 0, no_button
+    for i, curr in enumerate(held_L.tolist()):
+        new = curr & ~prev
+        if new:
+            active = (new & -new).bit_length() - 1  # left-most of the newly pressed buttons
+        elif curr == 0:
+            active = no_button
+        elif active == no_button or not (curr >> active) & 1:
+            active = (curr & -curr).bit_length() - 1  # newest was released, return to a held one
+        chosen_L[i] = active
+        prev = curr
 
-    # Handle rows with no presses
-    no_press = np.argwhere(row_sums == 0).flatten()
-    buttons_LD[no_press, -1] = 1
-
-    return buttons_LD
+    return np.eye(D, dtype=buttons_LD.dtype)[chosen_L]
 
 
 # PREPROCESSING
