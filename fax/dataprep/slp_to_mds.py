@@ -36,7 +36,9 @@ def slp_to_mds(slp_dir: Path, mds_dir: Path, split_idx: int) -> None:
         mds_dir: Directory where the MDS datasets will be created.
     """
     for bucket in ['nofox', 'onefox', 'twofox']:
-        files = list((slp_dir / bucket).glob('*.slp'))
+        # sort first: glob order depends on the filesystem, which would make the seeded shuffle
+        # (and thus the train/val split) differ between machines
+        files = sorted((slp_dir / bucket).glob('*.slp'))
         random.shuffle(files)
         splits = split_train_val(files, split_idx)
         for split, data in splits.items():
@@ -106,9 +108,6 @@ def process_replay(replay_path: Path) -> Optional[Dict[str, Any]]:
                 next_gamestate=next_gamestate,
                 replay_uuid=replay_uuid,
             )
-            curr_gamestate = next_gamestate
-            if curr_gamestate is None:
-                break
     except AssertionError as e:
         logger.trace(f'Skipping replay {replay_path}: {e}')
         return None
