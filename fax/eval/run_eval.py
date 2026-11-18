@@ -7,12 +7,14 @@ Largely copied from https://github.com/ericyuegu/hal
 """
 
 import random
+import re
 import time
 import traceback
 from multiprocessing.synchronize import Event as EventType
 from pathlib import Path
 from typing import List
 
+import attr
 from tqdm import trange
 import torch
 import torch.multiprocessing as mp
@@ -350,6 +352,13 @@ def run_closed_loop_evaluation(
     logger.info('Closed loop evaluation complete')
 
 
+def matchup_from_run_type(run_type: str) -> str:
+    """Extract the training matchup from a run type, e.g. '1k-XvF-ft' -> 'XvF'."""
+    match = re.fullmatch(r'[^-]+-([FX]v[FX])(-ft)?', run_type)
+    assert match is not None, f"Run type '{run_type}' is not like <n-epochs>-<matchup>[-ft]"
+    return match.group(1)
+
+
 def mock_framedata_as_tensordict(seq_len: int) -> TensorDict:
     """Mock `seq_len` frames of gamestate data."""
     return TensorDict({k: torch.ones(seq_len) for k in NP_TYPE_BY_COLUMN}, batch_size=(seq_len,))
@@ -408,6 +417,12 @@ if __name__ == '__main__':
     parser = create_parser(exposed_args)
     cfg = parse_args(parser.parse_args(), __file__)
 
+    # the preprocessor normalizes inputs with the stats of cfg.training.matchup's bucket, which
+    # has to be the one the agent was trained with, not whatever the default matchup is
+    cfg = attr.evolve(
+        cfg, training=attr.evolve(cfg.training, matchup=matchup_from_run_type(cfg.eval.p1_type))
+    )
+
     # use the requested run's weights, or else a random candidate from the specified run type
     candidates = sorted((cfg.paths.weights / cfg.eval.p1_type).glob('*.pth'))
     assert candidates, f'No weights found in {cfg.paths.weights / cfg.eval.p1_type}'
@@ -416,7 +431,10 @@ if __name__ == '__main__':
         assert p1_weights_path in candidates, f'{p1_weights_path} does not exist'
     else:
         p1_weights_path = random.choice(candidates)
-    logger.info(f'Evaluating {p1_weights_path.name} (1 of {len(candidates)} candidates)')
+    logger.info(
+        f'Evaluating {p1_weights_path.name} (1 of {len(candidates)} candidates), '
+        f'normalizing inputs with {cfg.training.matchup} stats'
+    )
 
     if cfg.eval.ffw:
         # measured by sending known inputs: the game does not wait for them in this mode, so
