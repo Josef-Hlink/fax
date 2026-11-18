@@ -68,7 +68,15 @@ def process_replay(replay_path: Path) -> Optional[Dict[str, Any]]:
     """
     frame_data: FrameData = defaultdict(list)
     try:
-        console = melee.Console(path=str(replay_path), is_dolphin=False, allow_old_version=True)
+        # netplay replays contain every frame that was rolled back twice (or more): first as it was
+        # predicted, later as it really happened; by default libmelee only returns the first one
+        # (which is what a live bot needs), we want all of them so we can keep the final version
+        console = melee.Console(
+            path=str(replay_path),
+            is_dolphin=False,
+            allow_old_version=True,
+            skip_rollback_frames=False,
+        )
         console.connect()
     except Exception as e:
         logger.debug(f'Error connecting to console for {replay_path}: {e}')
@@ -77,10 +85,21 @@ def process_replay(replay_path: Path) -> Optional[Dict[str, Any]]:
     replay_uuid = hash_to_int32(str(replay_path))
 
     try:
-        # double step on first frame to match next controller state to current gamestate
-        curr_gamestate = console.step()
-        while curr_gamestate is not None:
-            next_gamestate = console.step()
+        # read the whole game, letting later versions of a frame replace earlier ones
+        gamestates: List[melee.GameState] = []
+        first_frame: Optional[int] = None
+        gamestate = console.step()
+        while gamestate is not None:
+            if first_frame is None:
+                first_frame = gamestate.frame
+            del gamestates[gamestate.frame - first_frame :]
+            assert len(gamestates) == gamestate.frame - first_frame, 'gap in frame numbers'
+            gamestates.append(gamestate)
+            gamestate = console.step()
+
+        # controller state lives in the gamestate that results from it, so we pair every
+        # gamestate with the next one to get "what to press given the current frame"
+        for curr_gamestate, next_gamestate in zip(gamestates, [*gamestates[1:], None]):
             frame_data = extract_and_append_gamestate_inplace(
                 frame_data_by_field=frame_data,
                 curr_gamestate=curr_gamestate,
