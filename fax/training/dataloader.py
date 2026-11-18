@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import random
 import tempfile
 from pathlib import Path
 from typing import Any, Optional, Sequence, Tuple
@@ -45,6 +46,8 @@ class FAXStreamingDataset(StreamingDataset):
             raise ValueError(f"Invalid split '{split}'. Must be 'train', 'val', or None.")
 
         self.matchup = matchup  # this will be used in __getitem__
+        # validation always looks through player 1, so its loss stays comparable between runs
+        self.both_perspectives = cfg.training.both_perspectives and split == 'train'
         bucket = cfg.paths.mds / MATCHUP_TO_BUCKET[matchup]
         super().__init__(
             local=bucket.expanduser().as_posix(),
@@ -69,7 +72,9 @@ class FAXStreamingDataset(StreamingDataset):
 
         # determine ego player
         if self.matchup == 'FvF' or self.matchup == 'XvX':
-            ego: Player = 'p1'  # arbitrary since matchup is symmetric
+            # arbitrary since matchup is symmetric; using both doubles the data of these two
+            # matchups, which is unfair when comparing them to FvX and XvF, hence opt-in
+            ego: Player = random.choice(('p1', 'p2')) if self.both_perspectives else 'p1'
         elif self.matchup == 'FvX':
             ego: Player = 'p1' if sample_td['p1_character'][0] == FOX else 'p2'
         else:  # matchup == 'XvF'

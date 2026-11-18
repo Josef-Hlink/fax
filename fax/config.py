@@ -54,6 +54,7 @@ class TrainingCFG:
     matchup: str
     n_finetune_epochs: int
     finetune_lr_frac: float
+    both_perspectives: bool
 
     def __attrs_post_init__(self):
         """Validate batch_size, n_samples, n_val_samples, and matchup."""

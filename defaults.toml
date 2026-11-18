@@ -35,6 +35,7 @@ n-dataworkers = 8
 matchup = "FvF"
 n-finetune-epochs = 10
 finetune-lr-frac = 0.5
+both-perspectives = false
 [EVAL]
 p1-type = "1k-FvF-ft"
 p1-run = ""
