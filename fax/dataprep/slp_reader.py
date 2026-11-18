@@ -76,7 +76,10 @@ def parse_train_replay(
 
     # check if game was ended properly (no try guard here, we know the file is readable)
     game = read_slippi(file.as_posix(), skip_frames=False)
-    assert game.frames is not None and len(game.frames.ports) == 2, 'not a valid 1v1 game'
+    if game.frames is None or len(game.frames.ports) != 2:
+        # e.g. doubles; returning (instead of asserting) keeps one odd file from killing the indexing run
+        logger.debug(f'Game in {file.name} is not a valid 1v1 game')
+        return
     p1stocks = as_int(game.frames.ports[0].leader.post.stocks[-1])
     p2stocks = as_int(game.frames.ports[1].leader.post.stocks[-1])
     if not (p1stocks == 0 or p2stocks == 0):
@@ -99,7 +102,7 @@ def parse_train_replay(
         winner=1 if p2stocks == 0 else 2,
         p1stocks=p1stocks,
         p2stocks=p2stocks,
-        n_frames=len(game.frames.ports[0].leader.post.stocks),
+        n_frames=count_frames(game),
         p1rank=ranks[0],
         p2rank=ranks[1],
     )
@@ -114,17 +117,27 @@ def parse_eval_replay(file: Path) -> Optional[EvalReplayRecord]:
         logger.warning(f'Failed to read {file.name}: {e}')
         return
 
-    # check if game was ended properly
     assert game.frames is not None and len(game.frames.ports) == 2, 'not a valid 1v1 game'
     p1stocks = as_int(game.frames.ports[0].leader.post.stocks[-1])
     p2stocks = as_int(game.frames.ports[1].leader.post.stocks[-1])
-    if not (p1stocks == 0 or p2stocks == 0):
-        logger.debug(f'Game in {file.name} did not end properly')
+
+    # determine the winner; a game is over when someone is out of stocks or the timer ran out,
+    # in the latter case nobody is at 0 stocks and only the game's own placements tell who won
+    placements = None
+    if game.end is not None and game.end.players is not None and len(game.end.players) == 2:
+        placements = [p.placement for p in game.end.players]
+    if p1stocks == 0 or p2stocks == 0:
+        winner = 1 if p2stocks == 0 else 2
+    elif placements is not None and placements[0] != placements[1]:
+        winner = 1 if placements[0] < placements[1] else 2
+    else:
+        logger.warning(f'Game in {file.name} did not end properly')
+        return
 
     # check if we have a CPU player
     cpu_lvl = None
     if game.start.players[1].type.name == 'CPU':
-        cpu_lvl = game.start.players[1].type.value
+        cpu_lvl = game.start.players[1].cpu_level
 
     # create and return record
     return EvalReplayRecord(
@@ -132,12 +145,18 @@ def parse_eval_replay(file: Path) -> Optional[EvalReplayRecord]:
         stage=game.start.stage,
         p1char=game.start.players[0].character,
         p2char=game.start.players[1].character,
-        winner=1 if p2stocks == 0 else 2,
+        winner=winner,
         p1stocks=p1stocks,
         p2stocks=p2stocks,
-        n_frames=len(game.frames.ports[0].leader.post.stocks),
+        n_frames=count_frames(game),
         cpu_lvl=cpu_lvl,
     )
+
+
+def count_frames(game: Game) -> int:
+    """Number of distinct frames in a game; netplay replays repeat the frames that were rolled back."""
+    assert game.frames is not None
+    return as_int(game.frames.id[-1]) - as_int(game.frames.id[0]) + 1
 
 
 def as_int(x: Any) -> int:
