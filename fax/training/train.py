@@ -33,7 +33,11 @@ def train(cfg: CFG) -> None:
 
     # get dataloaders
     own_train_loader, own_val_loader = get_dataloaders(cfg, cfg.training.matchup)
-    fvf_train_loader, fvf_val_loader = get_dataloaders(cfg, 'FvF')
+    if cfg.training.matchup == 'FvF':
+        # no need to load (and validate on) the same data twice
+        fvf_train_loader, fvf_val_loader = own_train_loader, own_val_loader
+    else:
+        fvf_train_loader, fvf_val_loader = get_dataloaders(cfg, 'FvF')
 
     # initialize trainer (seeds the RNGs, so the model has to be built after it)
     trainer = Trainer(cfg)
@@ -44,7 +48,10 @@ def train(cfg: CFG) -> None:
     for epoch in range(1, cfg.training.n_epochs + 1):
         train_loss = trainer.train_epoch(own_train_loader, epoch, cfg.training.n_epochs)
         own_val_loss = trainer.validate(own_val_loader)
-        fvf_val_loss = trainer.validate(fvf_val_loader)
+        if fvf_val_loader is own_val_loader:
+            fvf_val_loss = own_val_loss
+        else:
+            fvf_val_loss = trainer.validate(fvf_val_loader)
 
         logger.info(
             f'Epoch {epoch}: tl = {train_loss:.4f}, '
@@ -90,6 +97,8 @@ def train(cfg: CFG) -> None:
             torch.save(model.state_dict(), trainer.ft_weights_path / f'{trainer.run_name}.pth')
             logger.info(f'Saved new best finetuned model with Val Loss = {best_val_loss:.4f}')
 
+    trainer.writer.finish()
+    logger.info('Finetuning complete.')
     return
 
 
@@ -148,11 +157,13 @@ class Trainer(torch.nn.Module):
             loss = compute_loss(outputs, targets)
             loss.backward()
             self.optimizer.step()
+            # the learning rate this step was taken with (logging it after the commit, as before,
+            # attached every value to the next step)
+            lr = self.optimizer.param_groups[0]['lr']
             self.scheduler.step()
 
             total_loss += loss.item()
-            self.writer.log({'train/loss': loss.item()}, None, commit=True)
-            self.writer.log({'train/lr': self.scheduler.get_last_lr()[0]}, None, commit=False)
+            self.writer.log({'train/loss': loss.item(), 'train/lr': lr}, None, commit=True)
 
         return total_loss / len(train_loader)
 
@@ -212,7 +223,7 @@ def compute_loss(outputs: TensorDict, targets: TensorDict) -> torch.Tensor:
 
 if __name__ == '__main__':
     exposed_args = {
-        'PATHS': 'mds',
+        'PATHS': 'mds weights',
         'BASE': 'seed debug wandb n-gpus',
         'MODEL': 'n-layers n-heads seq-len emb-dim dropout gamma',
         'OPTIM': 'lr wd b1 b2',
