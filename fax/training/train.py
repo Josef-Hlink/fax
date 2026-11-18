@@ -9,6 +9,8 @@ to demonstrate how all components interact.
 """
 
 import random
+import shutil
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -25,6 +27,7 @@ from fax.config import CFG, create_parser, parse_args
 from fax.model import Model
 from fax.processing.preprocessor import Preprocessor
 from fax.training.dataloader import get_dataloaders
+from fax.utils.constants import MATCHUP_TO_BUCKET
 from fax.utils.writer import DummyWriter, WandbWriter
 
 
@@ -64,7 +67,7 @@ def train(cfg: CFG) -> None:
         # save best model
         if own_val_loss < best_val_loss:
             best_val_loss = own_val_loss
-            torch.save(model.state_dict(), trainer.weights_path / f'{trainer.run_name}.pth')
+            trainer.save_weights(trainer.weights_path)
             logger.info(f'Saved new best model with val loss = {best_val_loss:.4f}')
 
     if cfg.training.n_finetune_epochs == 0:
@@ -98,7 +101,7 @@ def train(cfg: CFG) -> None:
         # save best model
         if fvf_val_loss < best_val_loss:
             best_val_loss = fvf_val_loss
-            torch.save(model.state_dict(), trainer.ft_weights_path / f'{trainer.run_name}.pth')
+            trainer.save_weights(trainer.ft_weights_path)
             logger.info(f'Saved new best finetuned model with Val Loss = {best_val_loss:.4f}')
 
     trainer.writer.finish()
@@ -139,6 +142,15 @@ class Trainer(torch.nn.Module):
         self.optimizer = AdamW(self.model.parameters(), lr=lr, weight_decay=wd, betas=(b1, b2))
         total_steps = cfg.training.n_epochs * cfg.training.n_samples // cfg.training.batch_size
         self.scheduler = CosineAnnealingLR(self.optimizer, T_max=total_steps, eta_min=1e-6)
+
+    def save_weights(self, directory: Path) -> None:
+        """Save the model, together with the stats its inputs are normalized with."""
+        torch.save(self.model.state_dict(), directory / f'{self.run_name}.pth')
+        bucket = MATCHUP_TO_BUCKET[self.cfg.training.matchup]
+        shutil.copyfile(
+            self.cfg.paths.mds / bucket / 'train' / 'stats.json',
+            directory / f'{self.run_name}.stats.json',
+        )
 
     def train_epoch(self, train_loader: StreamingDataLoader, epoch: int, n_epochs: int) -> float:
         """Train the model on the provided dataloader for one epoch.

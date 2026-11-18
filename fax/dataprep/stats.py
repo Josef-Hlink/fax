@@ -36,11 +36,12 @@ class FeatureStats:
 def load_dataset_stats(path: Path) -> Dict[str, FeatureStats]:
     """Load the dataset statistics from a JSON file.
     Args:
-        path (Path): Path to the directory containing the stats.json file.
+        path (Path): Path to a stats file, or to the directory containing the stats.json file.
     Returns:
         Dict[str, FeatureStats]: A dictionary mapping feature names to their statistics.
     """
-    with open(Path(path) / 'stats.json', 'r', encoding='utf-8') as f:
+    path = Path(path)
+    with open(path if path.is_file() else path / 'stats.json', 'r', encoding='utf-8') as f:
         data = json.load(f)
     return {feature: FeatureStats(**stats) for feature, stats in data.items()}
 

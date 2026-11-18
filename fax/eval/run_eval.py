@@ -146,6 +146,7 @@ def _gpu_worker(
     seq_len: int,
     stop_events: List[EventType],
     p1_weights_path: Path,
+    stats_path: Path | None,
     device: torch.device | str,
     cpu_flag_timeout: float = 5.0,
     debug: bool = False,
@@ -156,7 +157,7 @@ def _gpu_worker(
     """
     setup_logger(Path(cfg.paths.logs) / Path(__file__).name.replace('.py', '.log'), debug=debug)
     torch.set_float32_matmul_precision('high')
-    preprocessor = Preprocessor(cfg)
+    preprocessor = Preprocessor(cfg, stats_path)
     model = Model(preprocessor, cfg)
     with open(p1_weights_path, 'rb') as f:
         logger.debug(f'Loading model weights from {p1_weights_path}...')
@@ -256,12 +257,13 @@ def _gpu_worker(
 def run_closed_loop_evaluation(
     cfg: CFG,
     p1_weights_path: Path,
+    stats_path: Path | None = None,
     player: Player = 'p1',
     debug: bool = False,
 ) -> None:
     mp.set_start_method('spawn', force=True)
     device: torch.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    preprocessor = Preprocessor(cfg)
+    preprocessor = Preprocessor(cfg, stats_path)
     n_workers = cfg.eval.n_workers
 
     # create events to signal when cpu and gpu workers are ready
@@ -295,6 +297,7 @@ def run_closed_loop_evaluation(
             'seq_len': preprocessor.seq_len,
             'stop_events': stop_events,
             'p1_weights_path': p1_weights_path,
+            'stats_path': stats_path,
             'device': device,
             'debug': debug,
         },
@@ -417,12 +420,6 @@ if __name__ == '__main__':
     parser = create_parser(exposed_args)
     cfg = parse_args(parser.parse_args(), __file__)
 
-    # the preprocessor normalizes inputs with the stats of cfg.training.matchup's bucket, which
-    # has to be the one the agent was trained with, not whatever the default matchup is
-    cfg = attr.evolve(
-        cfg, training=attr.evolve(cfg.training, matchup=matchup_from_run_type(cfg.eval.p1_type))
-    )
-
     # use the requested run's weights, or else a random candidate from the specified run type
     candidates = sorted((cfg.paths.weights / cfg.eval.p1_type).glob('*.pth'))
     assert candidates, f'No weights found in {cfg.paths.weights / cfg.eval.p1_type}'
@@ -431,10 +428,19 @@ if __name__ == '__main__':
         assert p1_weights_path in candidates, f'{p1_weights_path} does not exist'
     else:
         p1_weights_path = random.choice(candidates)
-    logger.info(
-        f'Evaluating {p1_weights_path.name} (1 of {len(candidates)} candidates), '
-        f'normalizing inputs with {cfg.training.matchup} stats'
-    )
+    logger.info(f'Evaluating {p1_weights_path.name} (1 of {len(candidates)} candidates)')
+
+    # inputs have to be normalized with the stats the agent was trained with, which training
+    # saves next to the weights; for older weights, fall back on the bucket of the matchup in
+    # the run type (not on whatever the default matchup is)
+    stats_path: Path | None = p1_weights_path.with_suffix('.stats.json')
+    if stats_path.exists():
+        logger.info(f'Normalizing inputs with {stats_path.name}')
+    else:
+        stats_path = None
+        matchup = matchup_from_run_type(cfg.eval.p1_type)
+        cfg = attr.evolve(cfg, training=attr.evolve(cfg.training, matchup=matchup))
+        logger.warning(f'No stats saved with these weights, using the {matchup} stats in the MDS')
 
     if cfg.eval.ffw:
         # measured by sending known inputs: the game does not wait for them in this mode, so
@@ -447,6 +453,7 @@ if __name__ == '__main__':
         run_closed_loop_evaluation(
             cfg,
             p1_weights_path=p1_weights_path,
+            stats_path=stats_path,
             player='p1',
             debug=cfg.base.debug,
         )

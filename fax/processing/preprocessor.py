@@ -1,5 +1,6 @@
 import random
-from typing import Any, Dict, Set
+from pathlib import Path
+from typing import Any, Dict, Optional, Set
 
 import numpy as np
 import torch
@@ -34,10 +35,14 @@ class Preprocessor:
     - hidden dim sizes by input embedding head at runtime
     """
 
-    def __init__(self, cfg: CFG) -> None:
+    def __init__(self, cfg: CFG, stats_path: Optional[Path] = None) -> None:
+        """
+        Inputs are normalized with the stats of the training matchup's bucket, unless `stats_path`
+        points at a stats file to use instead (at eval: the one saved next to the weights).
+        """
         self.cfg = cfg
         dataset_path = cfg.paths.mds / MATCHUP_TO_BUCKET[cfg.training.matchup] / 'train'
-        self.stats = load_dataset_stats(dataset_path)
+        self.stats = load_dataset_stats(stats_path or dataset_path)
         self.normalization_fn_by_feature_name: Dict[str, Transformation] = {}  # TODO: check used
         self.seq_len = cfg.model.seq_len
 
