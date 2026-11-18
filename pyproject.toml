@@ -28,14 +28,11 @@ dependencies = [
 
 [project.optional-dependencies]
 peppi = [
-    "maturin>=1.9.4",
-    "peppi-py",
+    "peppi-py>=0.8.6",
 ]
 
 [tool.uv.sources]
 melee = { git = "https://github.com/vladfi1/libmelee.git", rev = "dev" }
-# NOTE: change this path to where you cloned peppi-py locally
-peppi-py = { path = "/home/jdham/Developer/ext/peppi-py" }
 
 [build-system]
 requires = ["hatchling"]

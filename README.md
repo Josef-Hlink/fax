@@ -36,39 +36,15 @@ The very first thing you should do (after installing uv) is cloning this repo.
 git clone git@github.com:Josef-Hlink/fax.git
 ```
 
-#### Package: peppi-py
-
-One of the complications we have to deal with setup-wise is that we need the newest version (0.8.6 as of writing) of [peppi-py](https://github.com/hohav/peppi-py) for the replay parsing to work.
-Since this version is not yet on PyPI, we have to install and build it from source.
-This project is actually a python wrapper around the rust package [peppi](https://github.com/hohav/peppi), so we also need to have rust installed.
-I know it's a bit of a hassle, but it's worth it.
-To install rust, please follow the instructions on [rust-lang.org](https://www.rust-lang.org/tools/install).
-
-When that's done, clone the peppi-py repo and checkout the 0.8.6 tag:
-
-```sh
-git clone git@github.com:hohav/peppi-py.git
-cd peppi-py
-git checkout v0.8.6
-```
-
->[!NOTE]
-> If you are only interested in running the training scripts and already have the MDS files, you can skip this step.
-> At some point I might upload these datasets somewhere, but unless you already have compatible MDS files, you will need peppi.
-> The evaluation scripts also depend on peppi, but you could probably rewrite the code to use `libmelee` for evaluation instead.
-
 #### Package: fax
 
-Now update the path that points to your local peppi-py clone in the [pyproject.toml](pyproject.toml) of our own repo (fax).
+Replay parsing uses [peppi-py](https://github.com/hohav/peppi-py) (0.8.6 or newer), a python wrapper around the rust package [peppi](https://github.com/hohav/peppi).
+It ships prebuilt wheels on PyPI, so there is nothing to clone or compile.
 
-```toml
-[tool.uv.sources]
-# change this line to fit your setup
-peppi-py = { path = "/home/jdham/Developer/ext/peppi-py" }
-```
+To create a .venv and install the dependencies, run a simple `uv sync --extra peppi` in the top-level of this repo,
+or just `uv sync` if you only want to train on existing MDS files (the data prep and evaluation scripts need peppi).
 
-To create a .venv and install the dependencies, you can now run a simple `uv sync --extra peppi` in the top-level of this repo,
-or just `uv sync` if you want to try without peppi (not recommended).
+If you use nix, the repo's flake provides a devShell with python 3.11, uv and the library paths the wheels need (`nix develop`, or `direnv allow`).
 
 If you really don't want to use uv, you can also do it manually with the following commands:
 
@@ -77,11 +53,6 @@ python3 -m venv .venv  # make sure your python binary is 3.11 (or higher)
 source .venv/bin/activate
 pip install -e .[peppi]  # pulls deps from pyproject.toml in editable mode
 # pip install -e .  # <-- without peppi
-
-cd path/to/peppi-py
-maturin develop  # builds and installs peppi-py into the active venv
-cd -  # back to fax
-python -c "import peppi_py; print(peppi_py.__file__)"  # verify
 ```
 
 If you're not using uv, simple replace `uv run <script>` with `python3 <script>` in the rest of these instructions.
