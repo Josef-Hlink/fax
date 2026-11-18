@@ -59,7 +59,7 @@ def cpu_worker(
             replay_dir=replay_dir,
             opponent_cpu_level=9,
             matchup=matchup,
-            enable_ffw=False,
+            enable_ffw=cfg.eval.ffw,
             debug=debug,
         )
         try:
@@ -116,6 +116,26 @@ def cpu_worker(
 
 
 def gpu_worker(
+    stop_events: List[EventType], model_output_ready_flags: List[EventType], **kwargs
+) -> None:
+    """Runs the GPU worker, making sure the CPU workers are released when it exits or crashes."""
+    try:
+        _gpu_worker(
+            stop_events=stop_events, model_output_ready_flags=model_output_ready_flags, **kwargs
+        )
+    except Exception as e:
+        logger.error(
+            f'GPU worker encountered an error: {e}\nTraceback:\n{"".join(traceback.format_tb(e.__traceback__))}'
+        )
+    finally:
+        # without this, the CPU workers (and their emulators) wait for model outputs forever
+        for stop_event in stop_events:
+            stop_event.set()
+        for output_flag in model_output_ready_flags:
+            output_flag.set()
+
+
+def _gpu_worker(
     cfg: CFG,
     shared_batched_model_input_B: TensorDict,  # (n_workers,)
     shared_batched_model_output_B: TensorDict,  # (n_workers,)
@@ -151,10 +171,15 @@ def gpu_worker(
 
     # warmup CUDA graphs with dummy inputs
     logger.debug('Compiling model...')
-    model = torch.compile(model, mode='default')
-    with torch.no_grad():
-        model(context_window_BL)
-    logger.debug('Warmup step finished')
+    compiled_model = torch.compile(model, mode='default')
+    try:
+        with torch.no_grad():
+            compiled_model(context_window_BL)
+        model = compiled_model
+        logger.debug('Warmup step finished')
+    except Exception as e:
+        # compilation needs a working C compiler and CUDA toolchain; inference is fast enough without
+        logger.warning(f'Could not compile the model, running it uncompiled: {e}')
 
     def wait_for_cpu_workers(timeout: float = 5.0) -> None:
         # wait for all CPU workers to signal that data is ready
@@ -214,13 +239,16 @@ def gpu_worker(
 
         i += 1
 
+        # clear model_input_ready_flags for the next iteration; this has to happen before the
+        # output flags are set: a CPU worker that is released first could already raise its
+        # input flag again, only for us to wipe it and wait for a frame that never comes
+        for input_flag, stop_event in zip(model_input_ready_flags, stop_events):
+            if not stop_event.is_set():
+                input_flag.clear()
+
         # signal to CPU workers that output is ready
         for output_flag in model_output_ready_flags:
             output_flag.set()
-
-        # clear model_input_ready_flags for the next iteration
-        for input_flag in model_input_ready_flags:
-            input_flag.clear()
 
 
 def run_closed_loop_evaluation(
@@ -232,7 +260,7 @@ def run_closed_loop_evaluation(
     mp.set_start_method('spawn', force=True)
     device: torch.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     preprocessor = Preprocessor(cfg)
-    n_workers = 2  # TODO: make configurable
+    n_workers = cfg.eval.n_workers
 
     # create events to signal when cpu and gpu workers are ready
     model_input_ready_flags: List[EventType] = [mp.Event() for _ in range(n_workers)]
@@ -373,15 +401,27 @@ def flatten_replay_dir(replay_dir: Path) -> None:
 
 if __name__ == '__main__':
     exposed_args = {
-        'PATHS': 'weights replays',
+        'PATHS': 'iso exe mds weights replays',
         'BASE': 'debug',
-        'EVAL': 'p1-type p2-type n-loops character',
+        'EVAL': '*',
     }
     parser = create_parser(exposed_args)
     cfg = parse_args(parser.parse_args(), __file__)
 
-    # choose random candidate weights from specified run type
-    p1_weights_path = random.choice(list((cfg.paths.weights / cfg.eval.p1_type).glob('*.pth')))
+    # use the requested run's weights, or else a random candidate from the specified run type
+    candidates = sorted((cfg.paths.weights / cfg.eval.p1_type).glob('*.pth'))
+    assert candidates, f'No weights found in {cfg.paths.weights / cfg.eval.p1_type}'
+    if cfg.eval.p1_run:
+        p1_weights_path = cfg.paths.weights / cfg.eval.p1_type / f'{cfg.eval.p1_run}.pth'
+        assert p1_weights_path in candidates, f'{p1_weights_path} does not exist'
+    else:
+        p1_weights_path = random.choice(candidates)
+    logger.info(f'Evaluating {p1_weights_path.name} (1 of {len(candidates)} candidates)')
+
+    if cfg.eval.ffw:
+        # measured by sending known inputs: the game does not wait for them in this mode, so
+        # roughly 1 in 3 is skipped and another 1 in 3 is applied for two frames
+        logger.warning('Fast-forward is not frame-accurate: the agent plays with dropped inputs')
 
     # every loop will generate ~2x n_workers replays
     for i in range(cfg.eval.n_loops):

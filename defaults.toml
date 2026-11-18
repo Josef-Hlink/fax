@@ -37,6 +37,9 @@ n-finetune-epochs = 10
 finetune-lr-frac = 0.5
 [EVAL]
 p1-type = "1k-FvF-ft"
+p1-run = ""
 p2-type = "cpu"
 n-loops = 5
+n-workers = 2
+ffw = false
 character = "FOX"

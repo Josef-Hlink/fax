@@ -91,8 +91,11 @@ class OptimCFG:
 @attr.s(auto_attribs=True, frozen=True)
 class EvalCFG:
     p1_type: str
+    p1_run: str
     p2_type: str
     n_loops: int
+    n_workers: int
+    ffw: bool
     character: str
 
 
@@ -249,7 +252,7 @@ if __name__ == '__main__':
         'MODEL': 'n-layers n-heads seq-len emb-dim dropout gamma',
         'OPTIM': 'lr wd b1 b2',
         'TRAINING': '*',  # NOTE: this exposes all exp args
-        'EVAL': 'p1-type p2-type n-loops',
+        'EVAL': '*',
     }
     parser = create_parser(exposed_args)
     args = parser.parse_args()
