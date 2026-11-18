@@ -26,3 +26,7 @@ wandb
 
 # plots
 figs
+# nix / direnv
+.direnv/
+# commit our generic .envrc (overrides a global gitignore that excludes it)
+!.envrc
