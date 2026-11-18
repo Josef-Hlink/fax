@@ -45,6 +45,9 @@
                 pkgs.zlib
               ]
               + ":/run/opengl-driver/lib";
+            # torch.compile (used by the eval) goes through triton, which looks for
+            # libcuda by running /sbin/ldconfig unless it is told where it is.
+            TRITON_LIBCUDA_PATH = "/run/opengl-driver/lib";
           }
         );
       });
