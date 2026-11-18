@@ -1,7 +1,7 @@
 import os
 import sys
 import tomllib
-from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser, Namespace
+from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser, BooleanOptionalAction, Namespace
 from glob import glob
 from pathlib import Path
 from typing import Dict, List, Type, get_args, get_origin
@@ -147,7 +147,10 @@ def create_parser(argnames: Dict[str, str]) -> ArgumentParser:
                     continue
                 default = _path(default)
             if isinstance(default, bool):
-                parser.add_argument(arg_name, action='store_true', help=help_msg)
+                # --flag / --no-flag, so a `true` in defaults.toml is respected and can be overridden
+                parser.add_argument(
+                    arg_name, action=BooleanOptionalAction, default=default, help=help_msg
+                )
             else:
                 parser.add_argument(
                     arg_name,
