@@ -14,7 +14,7 @@ import tempfile
 import traceback
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Dict, Generator, List, Optional, Tuple
+from typing import IO, Any, Dict, Generator, List, Optional, Tuple
 
 import attr
 import melee
@@ -239,7 +239,12 @@ def send_controller_inputs(controller: melee.Controller, inputs: Dict[str, Any])
         shoulder_value,
     )
 
-    buttons_to_press: List[str] = inputs.get('buttons', [])
+    buttons_to_press: List[str] = list(inputs.get('buttons', []))
+    # the analog trigger value does not reach the game when inputs go through dolphin's pipes
+    # (it always reads back as 0), so a full press would do nothing; click the digital button
+    # as well, which is also what a full press looks like in the replays (light presses stay lost)
+    if shoulder_value >= 1.0 and 'BUTTON_L' not in buttons_to_press:
+        buttons_to_press.append('BUTTON_L')
     for button_str in ORIGINAL_BUTTONS:
         button = getattr(melee.Button, button_str.upper())
         if button_str in buttons_to_press:
