@@ -102,7 +102,7 @@ def calculate_dataset_stats(path: Path) -> None:
 
 
 if __name__ == '__main__':
-    parser = create_parser({'PATH': 'mds', 'BASE': 'debug'})
+    parser = create_parser({'PATHS': 'mds', 'BASE': 'debug'})
     cfg = parse_args(parser.parse_args(), __file__)
 
     mds_path = cfg.paths.mds
