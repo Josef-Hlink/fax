@@ -75,6 +75,10 @@ def train(cfg: CFG) -> None:
 
     # finetuning phase
     logger.info('Initial training regiment completed. Starting finetuning phase...')
+    # finetune the best checkpoint, not whatever the last epoch left us with
+    best_weights = trainer.weights_path / f'{trainer.run_name}.pth'
+    model.load_state_dict(torch.load(best_weights, map_location=trainer.device))
+    logger.info(f'Loaded best pretrained model (val loss = {best_val_loss:.4f})')
     trainer.optimizer = AdamW(
         model.parameters(),
         lr=cfg.optim.lr * cfg.training.finetune_lr_frac,
