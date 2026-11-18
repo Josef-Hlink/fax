@@ -43,6 +43,7 @@ fi
 # run training
 uv run fax/training/train.py \
     --matchup "$MATCHUP" \
+    --seed "$SLURM_ARRAY_TASK_ID" \
     --mds "$DATA" \
     --n-epochs 1000 \
     --n-finetune-epochs 10 \

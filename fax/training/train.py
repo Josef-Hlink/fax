@@ -10,6 +10,7 @@ to demonstrate how all components interact.
 
 import random
 
+import numpy as np
 import torch
 import torch.nn.functional as F
 from loguru import logger
@@ -30,16 +31,14 @@ from fax.utils.writer import DummyWriter, WandbWriter
 def train(cfg: CFG) -> None:
     logger.info('Starting training...')
 
-    preprocessor = Preprocessor(cfg)
-    model = Model(preprocessor, cfg)
-    logger.info(f'Model has {sum(p.numel() for p in model.parameters()):,} parameters.')
-
     # get dataloaders
     own_train_loader, own_val_loader = get_dataloaders(cfg, cfg.training.matchup)
     fvf_train_loader, fvf_val_loader = get_dataloaders(cfg, 'FvF')
 
-    # initialize trainer
-    trainer = Trainer(cfg, model)
+    # initialize trainer (seeds the RNGs, so the model has to be built after it)
+    trainer = Trainer(cfg)
+    model = trainer.model
+    logger.info(f'Model has {sum(p.numel() for p in model.parameters()):,} parameters.')
 
     best_val_loss = float('inf')
     for epoch in range(1, cfg.training.n_epochs + 1):
@@ -95,10 +94,9 @@ def train(cfg: CFG) -> None:
 
 
 class Trainer(torch.nn.Module):
-    def __init__(self, cfg: CFG, model: Model):
+    def __init__(self, cfg: CFG):
         super().__init__()
         self.cfg = cfg
-        self.model = model
 
         self.run_name = f'{get_name()}-{random.randint(0, 1000):03d}'
         # run type is like '1k-FvF' or '100-FvX'
@@ -113,8 +111,13 @@ class Trainer(torch.nn.Module):
         self.writer: WandbWriter | DummyWriter = DummyWriter(cfg, self.run_name)
         if cfg.base.wandb:
             self.writer = WandbWriter(cfg, self.run_name)
+        # seed everything (only after picking the run name, which should stay unique per run);
+        # this covers weight init and, through the main torch RNG, the dataloader workers
         random.seed(cfg.base.seed)
+        np.random.seed(cfg.base.seed)
+        torch.manual_seed(cfg.base.seed)
 
+        self.model = Model(Preprocessor(cfg), cfg)
         self.device = torch.device('cuda' if cfg.base.n_gpus > 0 else 'cpu')
         self.model.to(self.device)
         self.to(self.device)
