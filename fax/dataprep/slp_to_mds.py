@@ -15,7 +15,7 @@ import struct
 import sys
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 import melee
 import numpy as np
@@ -29,17 +29,26 @@ from fax.utils.gamestate_utils import FrameData, extract_and_append_gamestate_in
 from fax.utils.schema import MDS_DTYPE_STR_BY_COLUMN, NP_TYPE_BY_COLUMN
 
 
-def slp_to_mds(slp_dir: Path, mds_dir: Path, split_idx: int) -> None:
+BUCKETS = ('nofox', 'onefox', 'twofox')
+
+
+def slp_to_mds(
+    slp_dir: Path, mds_dir: Path, split_idx: int, seed: int, buckets: Sequence[str] = BUCKETS
+) -> None:
     """Convert a directory of .slp files into an MDS dataset.
     Args:
         slp_dir: Directory containing .slp files to convert.
         mds_dir: Directory where the MDS datasets will be created.
+        split_idx: Number of replays per bucket that go to the train split.
+        seed: Seed for the train/val split.
+        buckets: The buckets to convert.
     """
-    for bucket in ['nofox', 'onefox', 'twofox']:
+    for bucket in buckets:
         # sort first: glob order depends on the filesystem, which would make the seeded shuffle
         # (and thus the train/val split) differ between machines
         files = sorted((slp_dir / bucket).glob('*.slp'))
-        random.shuffle(files)
+        # one generator per bucket, so a bucket's split doesn't depend on which others are converted
+        random.Random(f'{seed}-{bucket}').shuffle(files)
         splits = split_train_val(files, split_idx)
         for split, data in splits.items():
             split_output_dir = mds_dir / bucket / split
@@ -163,18 +172,23 @@ def process_replays(replay_paths: list[Path], mds_dir: Path) -> None:
 if __name__ == '__main__':
     exposed_args = {'PATHS': 'slp mds', 'BASE': 'seed debug', 'TRAINING': 'n-samples'}
     parser = create_parser(exposed_args)
-    cfg = parse_args(parser.parse_args(), __file__)
+    parser.add_argument(
+        '--buckets', nargs='+', choices=BUCKETS, default=list(BUCKETS), help='Buckets to convert.'
+    )
+    args = parser.parse_args()
+    cfg = parse_args(args, __file__)
 
     # resolve paths
     slp_dir = cfg.paths.slp.expanduser().resolve()
     assert slp_dir.is_dir(), f'{slp_dir} is not a directory'
 
     mds_dir = cfg.paths.mds.expanduser().resolve()
-    if mds_dir.exists() and any(mds_dir.iterdir()):
-        logger.error(f'{mds_dir} already exists and has contents; please delete it first')
-        sys.exit(1)
+    for bucket in args.buckets:
+        if (mds_dir / bucket).exists() and any((mds_dir / bucket).iterdir()):
+            logger.error(f'{mds_dir / bucket} already has contents; please delete it first')
+            sys.exit(1)
     mds_dir.mkdir(parents=True, exist_ok=True)
 
-    random.seed(cfg.base.seed)
-
-    slp_to_mds(slp_dir, mds_dir, split_idx=cfg.training.n_samples)
+    slp_to_mds(
+        slp_dir, mds_dir, split_idx=cfg.training.n_samples, seed=cfg.base.seed, buckets=args.buckets
+    )

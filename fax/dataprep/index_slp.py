@@ -9,8 +9,8 @@ This is a prerequisite for converting .slp files into an MDS dataset.
 
 import gzip
 import shutil
-import sys
 from pathlib import Path
+from typing import Sequence
 from zipfile import ZipFile
 
 from loguru import logger
@@ -21,7 +21,16 @@ from fax.dataprep.database import DataBase
 from fax.dataprep.slp_reader import parse_train_replay
 
 
-def process_zip_arch(arch_file: Path, out_dir: Path, db_path: Path, bucket_limit: int) -> None:
+BUCKETS = ('nofox', 'onefox', 'twofox')
+
+
+def process_zip_arch(
+    arch_file: Path,
+    out_dir: Path,
+    db_path: Path,
+    bucket_limit: int,
+    buckets: Sequence[str] = BUCKETS,
+) -> None:
     """Process a .zip archive of .slp files, indexing them into a database and
     organizing them into buckets based on the number of fox players.
     Args:
@@ -29,6 +38,7 @@ def process_zip_arch(arch_file: Path, out_dir: Path, db_path: Path, bucket_limit
         out_dir: Directory to store the organized .slp files: nofox, onefox, twofox.
         db_path: Path to the SQLite database file.
         bucket_limit: Maximum number of files per bucket.
+        buckets: The buckets to fill; the others are left as they are.
     """
     # make a temporary directory for extraction right next to archive
     # so we're sure it's on the same disk (named so we never wipe someone's unrelated 'tmp')
@@ -36,12 +46,15 @@ def process_zip_arch(arch_file: Path, out_dir: Path, db_path: Path, bucket_limit
         shutil.rmtree(tmp)
     tmp.mkdir(parents=True, exist_ok=True)
     # make sure output directories exist
-    dirs = tuple(Path(out_dir) / bucket for bucket in ['nofox', 'onefox', 'twofox'])
+    dirs = tuple(Path(out_dir) / bucket for bucket in BUCKETS)
     for d in dirs:
         d.mkdir(parents=True, exist_ok=True)
     db = DataBase(db_path)
     db.create_replays_table()
-    bucket_counts = [len(list(d.iterdir())) for d in dirs]
+    # replays that an earlier run already indexed are skipped, so a run can add to an existing index
+    indexed = {f.name for d in dirs for f in d.iterdir()}
+    # a bucket we are not filling counts as full
+    bucket_counts = [len(list(d.iterdir())) if d.name in buckets else bucket_limit for d in dirs]
 
     logger.info(f'Indexing .slp files in {arch_file}...')
     with ZipFile(arch_file, 'r') as zip_arch:
@@ -58,6 +71,8 @@ def process_zip_arch(arch_file: Path, out_dir: Path, db_path: Path, bucket_limit
             raw_name = Path(member.filename).name
             if not raw_name.endswith('.slp') and not raw_name.endswith('.slp.gz'):
                 logger.debug(f'Skipping non-slp file {raw_name}')
+                continue
+            if raw_name.removesuffix('.gz') in indexed:
                 continue
 
             # extract file to tmp directory
@@ -101,11 +116,18 @@ if __name__ == '__main__':
         'TRAINING': 'n-samples n-val-samples',
     }
     parser = create_parser(exposed_args)
-    cfg = parse_args(parser.parse_args(), __file__)
+    parser.add_argument(
+        '--buckets',
+        nargs='+',
+        choices=BUCKETS,
+        default=list(BUCKETS),
+        help='Buckets to fill. With an existing index, the run adds to it.',
+    )
+    args = parser.parse_args()
+    cfg = parse_args(args, __file__)
 
     if cfg.paths.sql.exists():
-        logger.error(f'Database file {cfg.paths.sql} already exists. Please delete it first.')
-        sys.exit(1)
+        logger.info(f'Database file {cfg.paths.sql} already exists, adding to it.')
 
     for arch_file in sorted(cfg.paths.zips, key=lambda p: p.name):
         if not arch_file.is_file() or not arch_file.name.endswith('.zip'):
@@ -116,6 +138,7 @@ if __name__ == '__main__':
             out_dir=cfg.paths.slp,
             db_path=cfg.paths.sql,
             bucket_limit=cfg.training.n_samples + cfg.training.n_val_samples,
+            buckets=args.buckets,
         )
 
     logger.info('All done! You can now proceed to convert the .slp files into MDS format.')

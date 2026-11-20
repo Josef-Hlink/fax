@@ -104,10 +104,18 @@ def calculate_dataset_stats(path: Path) -> None:
 
 if __name__ == '__main__':
     parser = create_parser({'PATHS': 'mds', 'BASE': 'debug'})
-    cfg = parse_args(parser.parse_args(), __file__)
+    parser.add_argument(
+        '--buckets',
+        nargs='+',
+        choices=['nofox', 'onefox', 'twofox'],
+        default=['nofox', 'onefox', 'twofox'],
+        help='Buckets to calculate stats for.',
+    )
+    args = parser.parse_args()
+    cfg = parse_args(args, __file__)
 
     mds_path = cfg.paths.mds
-    for bucket in ['nofox', 'onefox', 'twofox']:
+    for bucket in args.buckets:
         for split in ['train', 'val']:
             calculate_dataset_stats(mds_path / bucket / split)
             dataset_stats = load_dataset_stats(mds_path / bucket / split)
