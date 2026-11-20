@@ -98,6 +98,7 @@ class EvalCFG:
     n_workers: int
     ffw: bool
     character: str
+    temperature: float
 
 
 @attr.s(auto_attribs=True, frozen=True)

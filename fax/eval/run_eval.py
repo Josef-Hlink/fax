@@ -106,7 +106,9 @@ def cpu_worker(
 
                 # read model output and postprocess
                 model_output = shared_batched_model_output[rank].clone()
-                controller_inputs = preprocessor.postprocess_preds(model_output)
+                controller_inputs = preprocessor.postprocess_preds(
+                    model_output, temperature=cfg.eval.temperature
+                )
 
                 # send controller inputs to emulator, update gamestate
                 gamestate = gamestate_generator.send((controller_inputs, None))

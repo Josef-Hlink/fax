@@ -44,3 +44,4 @@ n-loops = 5
 n-workers = 2
 ffw = false
 character = "FOX"
+temperature = 1.0

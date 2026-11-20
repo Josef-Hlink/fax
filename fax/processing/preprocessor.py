@@ -138,15 +138,15 @@ class Preprocessor:
             seq_len=self.seq_len,
         )
 
-    def postprocess_preds(self, preds_C: TensorDict) -> Dict[str, Any]:
-        """Convert model predictions to controller inputs."""
+    def postprocess_preds(self, preds_C: TensorDict, temperature: float = 1.0) -> Dict[str, Any]:
+        """Convert model predictions to controller inputs, sampling each head at `temperature`."""
         processed_features: Dict[str, Any] = {}
 
         for (
             feature_name,
             transformation,
         ) in self.postprocess_config.transformation_by_controller_input.items():
-            processed_features[feature_name] = transformation(preds_C)
+            processed_features[feature_name] = transformation(preds_C, temperature)
 
         return processed_features
 
