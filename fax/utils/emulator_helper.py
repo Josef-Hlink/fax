@@ -252,7 +252,10 @@ def send_controller_inputs(controller: melee.Controller, inputs: Dict[str, Any])
         else:
             controller.release_button(button)
 
-    controller.flush()
+    # no flush here: `console.step()` flushes every controller once per frame. A second flush per
+    # frame is harmless with one agent, but with two the game can start a frame on the first
+    # one and take the second for the next frame's input; from then on it runs a frame ahead
+    # of the agents, who see their own previous input too late and start to oscillate
 
 
 @attr.s(auto_attribs=True)
@@ -275,6 +278,7 @@ class EmulatorManager:
     console_timeout: float = 5.0
     enable_ffw: bool = True
     debug: bool = False
+    n_resyncs: int = 0
 
     def __attrs_post_init__(self) -> None:
         self.console_logger = melee.Logger() if self.debug else None
@@ -304,6 +308,16 @@ class EmulatorManager:
             stage=melee.Stage[self.matchup.stage],
             opponent_cpu_level=self.opponent_cpu_level,
         )
+
+    def _queued_gamestate(self) -> melee.GameState | None:
+        """The next frame, if the game has already sent all of it; does not wait or flush."""
+        console = self.console
+        saved = console.controllers, console._polling_mode, console._polling_timeout
+        console.controllers, console._polling_mode, console._polling_timeout = [], True, 0
+        try:
+            return console.step()
+        finally:
+            console.controllers, console._polling_mode, console._polling_timeout = saved
 
     def run_game(
         self, iso_path: Path
@@ -349,14 +363,18 @@ class EmulatorManager:
             logger.debug(
                 f'Starting episode on {self.matchup.stage}: {self.matchup.ego_character} vs. {self.matchup.opponent_character}'
             )
+            queued_gamestate = None
             while i < self.max_steps:
-                # wrap `console.step()` in a thread with timeout
-                future = executor.submit(self.console.step)
-                try:
-                    gamestate = future.result(timeout=self.console_timeout)
-                except concurrent.futures.TimeoutError:
-                    logger.error('console.step() timed out')
-                    raise
+                if queued_gamestate is not None:
+                    gamestate, queued_gamestate = queued_gamestate, None
+                else:
+                    # wrap `console.step()` in a thread with timeout
+                    future = executor.submit(self.console.step)
+                    try:
+                        gamestate = future.result(timeout=self.console_timeout)
+                    except concurrent.futures.TimeoutError:
+                        logger.error('console.step() timed out')
+                        raise
 
                 if gamestate is None:
                     logger.debug('Gamestate is None')
@@ -367,6 +385,15 @@ class EmulatorManager:
                 else:
                     # yield gamestate and receive controller inputs
                     controller_inputs = yield gamestate
+                    # the game should now be waiting for these inputs. If it has produced
+                    # another frame instead, it is running ahead (seen at the start of every
+                    # game after the first, when both players are agents), and the inputs were
+                    # made for a frame that is over: go on with the newer frame instead
+                    queued_gamestate = self._queued_gamestate()
+                    if queued_gamestate is not None:
+                        self.n_resyncs += 1
+                        logger.debug(f'Game ran ahead at frame {gamestate.frame}, caught up')
+                        continue
                     if controller_inputs is None:
                         logger.debug('Controller inputs are None')
                     else:
