@@ -22,6 +22,7 @@ from fax.utils.constants import (
     MELEE_STAGE_ID_TO_INDEX,
     MELEE_STAGE_IDS,
 )
+from fax.utils.schema import N_PROJECTILE_SLOTS, PROJECTILE_FIELDS
 
 FrameData = DefaultDict[str, MutableSequence[Any]]
 
@@ -109,6 +110,27 @@ def extract_and_append_gamestate_inplace(
         player_data['port'] = port
         for feature_name, value in player_data.items():
             frame_data_by_field[f'{player_relative}_{feature_name}'].append(value)
+
+    ports = [port for port, _ in players]
+    projectiles = curr_gamestate.projectiles[:N_PROJECTILE_SLOTS]
+    for slot in range(N_PROJECTILE_SLOTS):
+        projectile = projectiles[slot] if slot < len(projectiles) else None
+        if projectile is None:
+            values: Dict[str, Any] = {field: 0 for field in PROJECTILE_FIELDS}
+            values['type'] = -1
+        else:
+            values = {
+                'type': projectile.type.value,
+                'subtype': projectile.subtype,
+                'owner': ports.index(projectile.owner) + 1 if projectile.owner in ports else 0,
+                'frame': projectile.frame,
+                'position_x': float(projectile.position.x),
+                'position_y': float(projectile.position.y),
+                'speed_x': float(projectile.speed.x),
+                'speed_y': float(projectile.speed.y),
+            }
+        for field, value in values.items():
+            frame_data_by_field[f'projectile{slot}_{field}'].append(value)
 
     if next_gamestate is None:
         extract_controller_inputs_inplace(

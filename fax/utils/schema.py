@@ -109,6 +109,28 @@ NP_TYPE_BY_COLUMN: dict[str, DTypeLike] = {
 }
 
 # Create a mapping of column names to human-readable dtype strings.
+# The first projectiles on screen, in the order the game lists them. An empty slot has type -1.
+N_PROJECTILE_SLOTS = 8
+PROJECTILE_FIELDS: dict[str, DTypeLike] = {
+    'type': np.int32,  # value of melee.ProjectileType, 255 for one libmelee does not know
+    'subtype': np.int32,
+    'owner': np.int32,  # 1 or 2 for the player it belongs to, 0 for neither
+    'frame': np.int32,  # how long it has been out
+    'position_x': np.float32,
+    'position_y': np.float32,
+    'speed_x': np.float32,
+    'speed_y': np.float32,
+}
+for _slot in range(N_PROJECTILE_SLOTS):
+    for _field, _dtype in PROJECTILE_FIELDS.items():
+        NP_TYPE_BY_COLUMN[f'projectile{_slot}_{_field}'] = _dtype
+
+# Netplay rank of each player, constant over a replay; 0 when unknown (as in evaluation games)
+RANKS = ('Bronze', 'Silver', 'Gold', 'Platinum', 'Diamond', 'Master', 'Grandmaster')
+RANK_INDEX = {rank: i for i, rank in enumerate(RANKS, start=1)}
+NP_TYPE_BY_COLUMN['p1_rank'] = np.int32
+NP_TYPE_BY_COLUMN['p2_rank'] = np.int32
+
 MDS_DTYPE_STR_BY_COLUMN = {
     name: f'ndarray:{np.dtype(dtype).name}' for name, dtype in NP_TYPE_BY_COLUMN.items()
 }

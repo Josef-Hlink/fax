@@ -30,7 +30,7 @@ from fax.dataprep.index_slp import BUCKETS, scratch_dir
 from fax.dataprep.slp_reader import extract_member
 from fax.utils.constants import NP_MASK_VALUE
 from fax.utils.gamestate_utils import FrameData, extract_and_append_gamestate_inplace
-from fax.utils.schema import MDS_DTYPE_STR_BY_COLUMN, NP_TYPE_BY_COLUMN
+from fax.utils.schema import MDS_DTYPE_STR_BY_COLUMN, NP_TYPE_BY_COLUMN, RANK_INDEX
 
 
 # archives opened by this worker process
@@ -107,7 +107,7 @@ def hash_to_int32(data: str) -> int:
 def process_job(
     job: Tuple[Path, str, str, Optional[str], Optional[str]],
 ) -> Optional[Dict[str, Any]]:
-    """Get a replay out of its archive and process it."""
+    """Get a replay out of its archive, process it and add what only the index knows."""
     arch_file, member, file_name, p1rank, p2rank = job
     if arch_file not in _zip_archs:
         _zip_archs[arch_file] = ZipFile(arch_file, 'r')
@@ -120,6 +120,10 @@ def process_job(
         return None
     finally:
         tmp_path.unlink(missing_ok=True)
+    if sample is not None:
+        n_frames = len(sample['frame'])
+        for player, rank in (('p1', p1rank), ('p2', p2rank)):
+            sample[f'{player}_rank'] = np.full(n_frames, RANK_INDEX.get(rank or '', 0), np.int32)
     return sample
 
 
