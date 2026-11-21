@@ -276,6 +276,7 @@ class EmulatorManager:
     max_steps: int = 99999
     latency_warning_threshold: float = 14.0
     console_timeout: float = 5.0
+    max_menu_frames: int = 3600  # between games, the menus take a few hundred frames
     enable_ffw: bool = True
     debug: bool = False
     n_resyncs: int = 0
@@ -352,6 +353,7 @@ class EmulatorManager:
         logger.debug('Controller 2 connected')
 
         i = 0
+        menu_frames = 0
 
         # this whole double with block is to ensure clean shutdown of the console and controller
         # i've battled with this for days and this is the only way i've found that works
@@ -381,8 +383,18 @@ class EmulatorManager:
                     continue
 
                 if gamestate.menu_state not in [melee.Menu.IN_GAME, melee.Menu.SUDDEN_DEATH]:
-                    self.menu_helper.select_character_and_stage(gamestate)
+                    if menu_frames == 0:
+                        # whatever was held on the last frame of the game would otherwise stay
+                        # held in the menus, where a stick or B takes the cursor anywhere
+                        for controller in (self.ego_controller, self.opponent_controller):
+                            controller.release_all()
+                    else:
+                        self.menu_helper.select_character_and_stage(gamestate)
+                    menu_frames += 1
+                    if menu_frames > self.max_menu_frames:
+                        raise RuntimeError(f'Stuck in the menus for {menu_frames} frames')
                 else:
+                    menu_frames = 0
                     # yield gamestate and receive controller inputs
                     controller_inputs = yield gamestate
                     # the game should now be waiting for these inputs. If it has produced
