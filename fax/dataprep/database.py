@@ -7,7 +7,7 @@ Example usage of some of the queries for an existing db in __main__ at the botto
 
 import sqlite3
 from pathlib import Path
-from typing import Any, Dict, List, Sequence, Set, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 from loguru import logger
 
@@ -70,6 +70,11 @@ class DataBase:
         if 'split' not in columns:
             # 'train' or 'val' once a conversion has picked the replay, so it stays there
             self.cursor.execute('ALTER TABLE replays ADD COLUMN split TEXT')
+        if 'pool_part' not in columns:
+            # where slp_to_mds.py put the converted replay: the directory of the pool part
+            # (relative to the pools) and its position in there; FAILED if it could not be read
+            self.cursor.execute('ALTER TABLE replays ADD COLUMN pool_part TEXT')
+            self.cursor.execute('ALTER TABLE replays ADD COLUMN pool_pos INTEGER')
         # members that are not usable for training, so a later run does not parse them again
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS skipped (
@@ -112,12 +117,29 @@ class DataBase:
 
     def replays_in_bucket(self, bucket: int) -> List[Dict[str, Any]]:
         """All replays of a bucket, as dicts with the fields a conversion needs."""
-        fields = ('file_name', 'archive', 'member', 'p1rank', 'p2rank', 'split')
+        fields = (
+            'file_name',
+            'archive',
+            'member',
+            'p1rank',
+            'p2rank',
+            'split',
+            'pool_part',
+            'pool_pos',
+        )
         self.cursor.execute(
             f'SELECT {", ".join(fields)} FROM replays WHERE bucket = ? ORDER BY file_name',
             (bucket,),
         )
         return [dict(zip(fields, row)) for row in self.cursor.fetchall()]
+
+    def set_pooled(self, rows: Sequence[Tuple[str, str, Optional[int]]]) -> None:
+        """Record (file_name, pool part, position) of converted replays."""
+        self.cursor.executemany(
+            'UPDATE replays SET pool_part = ?, pool_pos = ? WHERE file_name = ?',
+            [(part, pos, file_name) for file_name, part, pos in rows],
+        )
+        self.conn.commit()
 
     def set_split(self, file_names: Sequence[str], split: str) -> None:
         """Record that these replays belong to the train or the val split."""

@@ -85,8 +85,8 @@ The data used is gathered from three zipped archives of ranked netplay replays s
 Each of these archives contains \~130k high-quality\* .slp replays, totalling \~400k replays at \~300GB zipped.
 
 For my experiments I only needed 18.432 (16.384 training + 2.048 validation) games per bucket.
-The archives are indexed in full, and the conversion then takes the replays it needs straight out of them, so no unzipped .slp files are kept around.
-Those 18.432 games per bucket end up as \~12GB of zstd-compressed .mds files.
+The archives are indexed in full and converted once into pools of zstd-compressed .mds files (\~0.2MB per replay), reading the replays straight out of the archives, so no unzipped .slp files are kept around.
+The datasets the agents train on are then copied out of those pools; 18.432 games per bucket are \~12GB.
 In order for the agent to train, it will need to unpack them.
 
 #### Full data prep pipeline
@@ -99,11 +99,12 @@ Note that I do not mention any paths or CLI arguments to the `uv run` commands b
     I ran three instances of wget in parallel (`wget --show-progress -O ./ranked-anonymized-{1,2,3}.zip <link to archive>`), as each download took about an hour to complete with very decent connectivity.
 3. Run `uv run fax/dataprep/index_slp.py` to index every usable replay in the archives into an sqlite database: its bucket, characters, stage, ranks and where it is in its archive.
     Nothing is extracted. This takes about five minutes per archive; a rerun only looks at what is new.
-4. Run `uv run fax/dataprep/slp_to_mds.py` to convert `n-samples` + `n-val-samples` replays per bucket into zstd-compressed MDS shards, reading them from the archives.
-    The index remembers which split a replay went to, so a bigger dataset made later contains the smaller one.
-    These shards take up relatively little space, but will be unpacked in the next step.
-    This step took me a little over 2 hours, with some pretty aggressive multithreading (16 workers).
-5. Delete the archives if you need the disk space; keep the index.
+4. Run `uv run fax/dataprep/slp_to_mds.py` to convert every indexed replay into pools of zstd-compressed MDS shards, one pool per bucket and archive.
+    This is the slow step, at 2 to 3 seconds per replay and core: about 7 hours per archive with 16 workers.
+    It goes on where it left off when interrupted, and once an archive is converted you can delete it; keep the index.
+5. Run `uv run fax/dataprep/build_dataset.py` to copy `n-samples` + `n-val-samples` replays per bucket out of the pools into the datasets for training.
+    No replay is parsed here, so making another dataset later is cheap.
+    The index remembers which split a replay went to, so a bigger dataset contains the smaller one.
 6. Run `uv run fax/dataprep/stats.py` to calculate the statistics for each of the input features in the datasets.
     These stats are needed for input normalization during training.
     Note that this script will unpack the .mds files, so make sure you have enough disk space; \~20x the size of the compressed sets should be safe.
