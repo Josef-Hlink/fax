@@ -84,9 +84,10 @@ You will need to burn your physical SSBM disk to build an .iso file for any of t
 The data used is gathered from three zipped archives of ranked netplay replays shared with me by, again, vladfi1 aka xpilot.
 Each of these archives contains \~130k high-quality\* .slp replays, totalling \~400k replays at \~300GB zipped.
 
-For my experiments I only needed 18.432 (16.384 training + 2.048 validation) games per bucket, so I iterate over the zipped archives directly, unzipping and parsing on-the-fly, until all I have enough replays for each bucket.
-This way we end up only keeping \~200GB of unzipped .slp files that we can then turn into \~12GB of zstd-compressed .mds files.
-In order for the agent to train, it will need to unpack them, but by that time you can just delete the original .slp files again.
+For my experiments I only needed 18.432 (16.384 training + 2.048 validation) games per bucket.
+The archives are indexed in full, and the conversion then takes the replays it needs straight out of them, so no unzipped .slp files are kept around.
+Those 18.432 games per bucket end up as \~12GB of zstd-compressed .mds files.
+In order for the agent to train, it will need to unpack them.
 
 #### Full data prep pipeline
 
@@ -96,15 +97,14 @@ Note that I do not mention any paths or CLI arguments to the `uv run` commands b
     I pulled the first three.
 2. Download them with wget (or any other download manager).
     I ran three instances of wget in parallel (`wget --show-progress -O ./ranked-anonymized-{1,2,3}.zip <link to archive>`), as each download took about an hour to complete with very decent connectivity.
-3. Run `uv run fax/dataprep/index_slp.py` to index the replays into an sqlite database and put the extracted .slp files into their respective buckets.
-    This may also take quite some time, for me it took about 2h30m.
-    I've got (the relevant parts of) my hardware setup listed at the bottom of this README, if you're curious.
-4. Delete the archives; we don't need them anymore, but we do need the disk space for the next steps.
-5. Run `uv run fax/dataprep/slp_to_mds.py` to convert the .slp files into zstd-compressed MDS shards.
+3. Run `uv run fax/dataprep/index_slp.py` to index every usable replay in the archives into an sqlite database: its bucket, characters, stage, ranks and where it is in its archive.
+    Nothing is extracted. This takes about five minutes per archive; a rerun only looks at what is new.
+4. Run `uv run fax/dataprep/slp_to_mds.py` to convert `n-samples` + `n-val-samples` replays per bucket into zstd-compressed MDS shards, reading them from the archives.
+    The index remembers which split a replay went to, so a bigger dataset made later contains the smaller one.
     These shards take up relatively little space, but will be unpacked in the next step.
     This step took me a little over 2 hours, with some pretty aggressive multithreading (16 workers).
-6. Delete the raw .slp files; this frees up another \~200GB of space.
-7. Run `uv run fax/dataprep/stats.py` to calculate the statistics for each of the input features in the datasets.
+5. Delete the archives if you need the disk space; keep the index.
+6. Run `uv run fax/dataprep/stats.py` to calculate the statistics for each of the input features in the datasets.
     These stats are needed for input normalization during training.
     Note that this script will unpack the .mds files, so make sure you have enough disk space; \~20x the size of the compressed sets should be safe.
     The stats calculation (including unpacking) cost me just under one hour.

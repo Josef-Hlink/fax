@@ -2,8 +2,7 @@
 iso = "Path to your Melee ISO file."
 exe = "Path to your headless Dolphin executable."
 zips = "List of paths to your .zip files containing .slp files (supports glob patterns)."
-slp = "Path to your directory of (unzipped) .slp files."
-sql = "Path where the SQLite database file for indexing .slp files is stored."
+sql = "Path where the SQLite database file with the index of the .slp files in the archives is stored."
 mds = "Home directory for your .mds datasets."
 logs = "Home directory for Loguru logs."
 weights = "Home directory for best performing model weights saved during training."
@@ -31,10 +30,10 @@ batch-size = "Number of samples to be propagated through the network at once dur
 n-epochs = "Number of epochs to train for. Validation happens at the end of each epoch."
 n-samples = """
     Number of training samples to draw from the dataset for each epoch.
-    This parameter is also used to determine the number of .slp files to load from the zip archives,
+    This parameter is also the number of replays per bucket that slp_to_mds.py puts in the train split,
     this way we sample exactly one sequence from each episode (replay).
 """
-n-val-samples = "Number of samples to use for validation at the end of each epoch."
+n-val-samples = "Number of samples to use for validation at the end of each epoch, and of replays per bucket in the val split."
 n-dataworkers = "Number of subprocesses MosaicML will use to load data."
 matchup = "Type of data the agent will be trained on. Options are FvF, FvX, XvF, XvX."
 n-finetune-epochs = "Number of finetuning epochs to perform after the main training is complete."

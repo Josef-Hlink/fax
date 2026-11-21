@@ -2,20 +2,21 @@
 # -*- coding: utf-8 -*-
 
 """
-This script converts a directory of (bucketed) .slp files into 3 MDS datasets.
-Each bucket (nofox, onefox, twofox) is split into train and validation sets
-    based on how many training samples are specified.
+This script converts indexed replays (see index_slp.py) into 3 MDS datasets, one per bucket
+(nofox, onefox, twofox), each with a train and a val split of the requested sizes.
+The replays are read straight from the .zip archives.
 The resulting MDS datasets can be used for training the agents.
 """
 
 import hashlib
 import multiprocessing as mp
-import random
+import os
 import struct
 import sys
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Tuple
+from zipfile import ZipFile
 
 import melee
 import numpy as np
@@ -24,37 +25,77 @@ from streaming import MDSWriter
 from tqdm import tqdm
 
 from fax.config import create_parser, parse_args
+from fax.dataprep.database import DataBase
+from fax.dataprep.index_slp import BUCKETS, scratch_dir
+from fax.dataprep.slp_reader import extract_member
 from fax.utils.constants import NP_MASK_VALUE
 from fax.utils.gamestate_utils import FrameData, extract_and_append_gamestate_inplace
 from fax.utils.schema import MDS_DTYPE_STR_BY_COLUMN, NP_TYPE_BY_COLUMN
 
 
-BUCKETS = ('nofox', 'onefox', 'twofox')
+# archives opened by this worker process
+_zip_archs: Dict[Path, ZipFile] = {}
 
 
 def slp_to_mds(
-    slp_dir: Path, mds_dir: Path, split_idx: int, seed: int, buckets: Sequence[str] = BUCKETS
+    db_path: Path,
+    zips: Sequence[Path],
+    mds_dir: Path,
+    n_train: int,
+    n_val: int,
+    seed: int,
+    buckets: Sequence[str] = BUCKETS,
 ) -> None:
-    """Convert a directory of .slp files into an MDS dataset.
+    """Convert indexed replays into MDS datasets, reading them straight from the archives.
     Args:
-        slp_dir: Directory containing .slp files to convert.
+        db_path: The index made by index_slp.py.
+        zips: The .zip archives the index refers to.
         mds_dir: Directory where the MDS datasets will be created.
-        split_idx: Number of replays per bucket that go to the train split.
-        seed: Seed for the train/val split.
+        n_train: Number of replays per bucket for the train split.
+        n_val: Number of replays per bucket for the val split.
+        seed: Seed for picking the replays.
         buckets: The buckets to convert.
     """
+    zip_by_name = {path.name: path for path in zips}
+    db = DataBase(db_path)
+    db.create_replays_table()
     for bucket in buckets:
-        # sort first: glob order depends on the filesystem, which would make the seeded shuffle
-        # (and thus the train/val split) differ between machines
-        files = sorted((slp_dir / bucket).glob('*.slp'))
-        # one generator per bucket, so a bucket's split doesn't depend on which others are converted
-        random.Random(f'{seed}-{bucket}').shuffle(files)
-        splits = split_train_val(files, split_idx)
-        for split, data in splits.items():
+        splits = pick_replays(db, BUCKETS.index(bucket), n_train, n_val, seed)
+        for split, replays in splits.items():
+            missing = {r['archive'] for r in replays} - set(zip_by_name)
+            assert not missing, f'Archives {missing} are not among --zips'
+            jobs = [
+                (zip_by_name[r['archive']], r['member'], r['file_name'], r['p1rank'], r['p2rank'])
+                for r in replays
+            ]
             split_output_dir = mds_dir / bucket / split
             split_output_dir.mkdir(parents=True, exist_ok=True)
-            process_replays(data, split_output_dir)
-    return
+            process_replays(jobs, split_output_dir)
+    db.close()
+
+
+def pick_replays(
+    db: DataBase, bucket: int, n_train: int, n_val: int, seed: int
+) -> Dict[str, List[Dict[str, Any]]]:
+    """
+    Pick the replays of a bucket's train and val split, in a seeded order.
+
+    The index remembers which split a replay was picked for, and those come first: a bigger
+    dataset contains the smaller one, and a replay never moves from one split to the other.
+    """
+    replays = db.replays_in_bucket(bucket)
+    assert all(r['member'] for r in replays), 'Index has replays without a place; rerun index_slp'
+    replays.sort(key=lambda r: hashlib.md5(f'{seed}-{r["file_name"]}'.encode()).digest())
+    free = [r for r in replays if r['split'] is None]
+    splits = {}
+    for split, n in (('train', n_train), ('val', n_val)):
+        picked = [r for r in replays if r['split'] == split][:n]
+        new, free = free[: n - len(picked)], free[n - len(picked) :]
+        db.set_split([r['file_name'] for r in new], split)
+        splits[split] = picked + new
+        if len(splits[split]) < n:
+            logger.warning(f'{BUCKETS[bucket]}/{split}: only {len(splits[split])} of {n} replays')
+    return splits
 
 
 def hash_to_int32(data: str) -> int:
@@ -63,15 +104,30 @@ def hash_to_int32(data: str) -> int:
     return int32_value
 
 
-def split_train_val(input_paths: List[Path], split_idx: int) -> Dict[str, List[Path]]:
-    """Split input paths into train and validation sets."""
-    return {'train': input_paths[:split_idx], 'val': input_paths[split_idx:]}
+def process_job(
+    job: Tuple[Path, str, str, Optional[str], Optional[str]],
+) -> Optional[Dict[str, Any]]:
+    """Get a replay out of its archive and process it."""
+    arch_file, member, file_name, p1rank, p2rank = job
+    if arch_file not in _zip_archs:
+        _zip_archs[arch_file] = ZipFile(arch_file, 'r')
+    tmp_path = scratch_dir() / f'fax-convert-{os.getpid()}.slp'
+    try:
+        extract_member(_zip_archs[arch_file], member, tmp_path)
+        sample = process_replay(tmp_path, replay_uuid=hash_to_int32(file_name))
+    except Exception as e:
+        logger.debug(f'Error reading {member} from {arch_file.name}: {e}')
+        return None
+    finally:
+        tmp_path.unlink(missing_ok=True)
+    return sample
 
 
-def process_replay(replay_path: Path) -> Optional[Dict[str, Any]]:
+def process_replay(replay_path: Path, replay_uuid: int) -> Optional[Dict[str, Any]]:
     """Process a single replay file and extract frame data.
     Args:
         replay_path: Path to the .slp replay file.
+        replay_uuid: Number to tell the replay's frames from those of others.
     Returns:
         A dictionary containing frame data arrays, or None if processing failed.
 
@@ -92,8 +148,6 @@ def process_replay(replay_path: Path) -> Optional[Dict[str, Any]]:
     except Exception as e:
         logger.debug(f'Error connecting to console for {replay_path}: {e}')
         return None
-
-    replay_uuid = hash_to_int32(str(replay_path))
 
     try:
         # read the whole game, letting later versions of a frame replace earlier ones
@@ -136,13 +190,13 @@ def process_replay(replay_path: Path) -> Optional[Dict[str, Any]]:
     return sample
 
 
-def process_replays(replay_paths: list[Path], mds_dir: Path) -> None:
-    """Process a list of replay files into an MDS dataset.
+def process_replays(jobs: List[Tuple[Any, ...]], mds_dir: Path) -> None:
+    """Process replays into an MDS dataset.
     Args:
-        replay_paths: List of paths to .slp replay files.
+        jobs: What `process_job` needs of every replay.
         mds_dir: Directory where the MDS dataset will be created.
-        n_workers: Number of MP worker processes to use for processing replays.
     """
+    replay_paths = jobs
 
     n_workers = max(1, mp.cpu_count() - 4)  # leave some cores free
     logger.info(f'Processing {len(replay_paths)} replays into MDS dataset at {mds_dir}...')
@@ -156,7 +210,7 @@ def process_replays(replay_paths: list[Path], mds_dir: Path) -> None:
         exist_ok=True,
     ) as out:
         with mp.Pool(n_workers) as pool:
-            samples = pool.imap_unordered(process_replay, replay_paths)
+            samples = pool.imap_unordered(process_job, replay_paths)
             for sample in tqdm(
                 samples, total=len(replay_paths), desc=f'Processing {mds_dir.name} split'
             ):
@@ -170,17 +224,17 @@ def process_replays(replay_paths: list[Path], mds_dir: Path) -> None:
 
 
 if __name__ == '__main__':
-    exposed_args = {'PATHS': 'slp mds', 'BASE': 'seed debug', 'TRAINING': 'n-samples'}
+    exposed_args = {
+        'PATHS': 'zips sql mds',
+        'BASE': 'seed debug',
+        'TRAINING': 'n-samples n-val-samples',
+    }
     parser = create_parser(exposed_args)
     parser.add_argument(
         '--buckets', nargs='+', choices=BUCKETS, default=list(BUCKETS), help='Buckets to convert.'
     )
     args = parser.parse_args()
     cfg = parse_args(args, __file__)
-
-    # resolve paths
-    slp_dir = cfg.paths.slp.expanduser().resolve()
-    assert slp_dir.is_dir(), f'{slp_dir} is not a directory'
 
     mds_dir = cfg.paths.mds.expanduser().resolve()
     for bucket in args.buckets:
@@ -190,5 +244,11 @@ if __name__ == '__main__':
     mds_dir.mkdir(parents=True, exist_ok=True)
 
     slp_to_mds(
-        slp_dir, mds_dir, split_idx=cfg.training.n_samples, seed=cfg.base.seed, buckets=args.buckets
+        cfg.paths.sql,
+        cfg.paths.zips,
+        mds_dir,
+        n_train=cfg.training.n_samples,
+        n_val=cfg.training.n_val_samples,
+        seed=cfg.base.seed,
+        buckets=args.buckets,
     )

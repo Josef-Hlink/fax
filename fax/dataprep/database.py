@@ -7,7 +7,7 @@ Example usage of some of the queries for an existing db in __main__ at the botto
 
 import sqlite3
 from pathlib import Path
-from typing import List
+from typing import Any, Dict, List, Sequence, Set, Tuple
 
 from loguru import logger
 
@@ -28,8 +28,24 @@ class DataBase:
         self.cursor = self.conn.cursor()
         logger.debug(f'Connected to database at {self.db_path}')
 
+    FIELDS = (
+        'archive',
+        'bucket',
+        'file_name',
+        'member',
+        'stage',
+        'p1char',
+        'p2char',
+        'winner',
+        'p1stocks',
+        'p2stocks',
+        'n_frames',
+        'p1rank',
+        'p2rank',
+    )
+
     def create_replays_table(self) -> None:
-        """Create the replays table in the database."""
+        """Create the tables, or bring those of an older index up to date."""
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS replays (
                 id INTEGER PRIMARY KEY,
@@ -47,36 +63,68 @@ class DataBase:
                 p2rank TEXT
             )
         """)
+        columns = {row[1] for row in self.cursor.execute('PRAGMA table_info(replays)')}
+        if 'member' not in columns:
+            # where the replay is inside its archive; older indexes only kept the file name
+            self.cursor.execute('ALTER TABLE replays ADD COLUMN member TEXT')
+        if 'split' not in columns:
+            # 'train' or 'val' once a conversion has picked the replay, so it stays there
+            self.cursor.execute('ALTER TABLE replays ADD COLUMN split TEXT')
+        # members that are not usable for training, so a later run does not parse them again
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS skipped (
+                archive TEXT NOT NULL,
+                member TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                PRIMARY KEY (archive, member)
+            )
+        """)
+        self.cursor.execute('CREATE INDEX IF NOT EXISTS replays_bucket ON replays (bucket)')
         self.conn.commit()
-        logger.debug('Created replays table')
-        return
 
-    def insert_replay(self, record: TrainReplayRecord) -> None:
-        """Insert a TrainReplayRecord into the replays table."""
-        fields = (
-            'archive',
-            'bucket',
-            'file_name',
-            'stage',
-            'p1char',
-            'p2char',
-            'winner',
-            'p1stocks',
-            'p2stocks',
-            'n_frames',
-            'p1rank',
-            'p2rank',
-        )
-        self.cursor.execute(
+    def insert_replays(self, records: Sequence[TrainReplayRecord]) -> None:
+        """
+        Insert TrainReplayRecords into the replays table. A replay that an older index already
+        has only gets its place in the archive filled in.
+        """
+        self.cursor.executemany(
             f"""
-            INSERT OR IGNORE INTO replays ({', '.join(fields)})
-            VALUES ({', '.join(['?' for _ in fields])})
+            INSERT INTO replays ({', '.join(self.FIELDS)})
+            VALUES ({', '.join(['?' for _ in self.FIELDS])})
+            ON CONFLICT (file_name) DO UPDATE SET member = excluded.member
         """,
-            tuple(map(lambda f: getattr(record, f), fields)),
+            [tuple(getattr(record, f) for f in self.FIELDS) for record in records],
         )
         self.conn.commit()
-        logger.debug(f'Inserted replay {record.file_name} into database')
-        return
+
+    def insert_skipped(self, rows: Sequence[Tuple[str, str, str]]) -> None:
+        """Remember (archive, member, reason) of members that are not usable."""
+        self.cursor.executemany('INSERT OR IGNORE INTO skipped VALUES (?, ?, ?)', rows)
+        self.conn.commit()
+
+    def known_members(self, archive: str) -> Set[str]:
+        """Members of an archive that are indexed or skipped already."""
+        known = set()
+        for table in ('replays', 'skipped'):
+            self.cursor.execute(f'SELECT member FROM {table} WHERE archive = ?', (archive,))
+            known.update(row[0] for row in self.cursor.fetchall())
+        return known
+
+    def replays_in_bucket(self, bucket: int) -> List[Dict[str, Any]]:
+        """All replays of a bucket, as dicts with the fields a conversion needs."""
+        fields = ('file_name', 'archive', 'member', 'p1rank', 'p2rank', 'split')
+        self.cursor.execute(
+            f'SELECT {", ".join(fields)} FROM replays WHERE bucket = ? ORDER BY file_name',
+            (bucket,),
+        )
+        return [dict(zip(fields, row)) for row in self.cursor.fetchall()]
+
+    def set_split(self, file_names: Sequence[str], split: str) -> None:
+        """Record that these replays belong to the train or the val split."""
+        self.cursor.executemany(
+            'UPDATE replays SET split = ? WHERE file_name = ?', [(split, f) for f in file_names]
+        )
+        self.conn.commit()
 
     @property
     def n_replays(self) -> int:

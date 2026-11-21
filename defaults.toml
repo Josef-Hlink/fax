@@ -2,7 +2,6 @@
 iso = "$XDG_DEVELOPER_DIR/own/fax/data/Super Smash Bros. Melee (USA) (En,Ja) (v1.02).iso"
 exe = "$XDG_DEVELOPER_DIR/own/fax/data/Slippi_Online-x86_64-ExiAI.AppImage"
 zips = "/data/zips/ranked-anonymized-*.zip"  # 1-3
-slp = "$XDG_DEVELOPER_DIR/own/fax/data/ranked-anonymized/"
 sql = "$XDG_DEVELOPER_DIR/own/fax/data/index.db"
 mds = "$XDG_DEVELOPER_DIR/own/fax/data/mds/"
 logs = "$XDG_DEVELOPER_DIR/own/fax/data/logs/"

@@ -5,8 +5,10 @@ This module houses functions for reading and parsing .slp files into
 ReplayRecord instances for easy access to relevant fields using peppi_py.
 """
 
+import gzip
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any, Optional, Tuple
+from zipfile import ZipFile
 
 import attr
 import numpy as np
@@ -22,6 +24,7 @@ class TrainReplayRecord:
     archive: str
     bucket: int
     file_name: str
+    member: str  # path inside the archive
     stage: int
     p1char: int
     p2char: int
@@ -46,56 +49,50 @@ class EvalReplayRecord:
     cpu_lvl: Optional[int] = None
 
 
+def extract_member(zip_arch: ZipFile, member: str, dest: Path) -> None:
+    """Write one replay from a .zip archive to `dest`, gunzipped if it is stored as .slp.gz."""
+    data = zip_arch.read(member)
+    if member.endswith('.gz'):
+        data = gzip.decompress(data)
+    with open(dest, 'wb') as f:
+        f.write(data)
+
+
 def parse_train_replay(
-    file: Path, arch: str, bucket_counts: List[int], bucket_limit: int
-) -> Optional[TrainReplayRecord]:
-    # first parse minimally to check some cheap early exit conditions
+    file: Path, arch: str, member: str
+) -> Tuple[Optional[TrainReplayRecord], Optional[str]]:
+    """
+    Read a replay and return its record, or None and the reason it is not usable for training
+    (anything but a 1v1 game that started on 4 stocks and was played out).
+    """
     try:
-        game: Game = read_slippi(file.as_posix(), skip_frames=True)
+        game: Game = read_slippi(file.as_posix(), skip_frames=False)
     except Exception as e:
-        logger.debug(f'Failed to read {file.name}: {e}')
-        return
+        return None, f'unreadable: {e}'
 
-    # determine potential destination directory based on number of foxes
-    # stop early if already enough samples of this category
-    # we handle this first, as it's the most one most likely to hit
-    # (we fill up nofox and onefox rather quickly)
-    try:
-        p1char = game.start.players[0].character
-        p2char = game.start.players[1].character
-    except IndexError:
-        logger.debug(f'Game in {file.name} does not have two players')
-        return
-    bucket = (p1char == FOX) + (p2char == FOX)  # 0, 1, or 2 foxes
-    if bucket_counts[bucket] >= bucket_limit:
-        return
-
-    # stop early if not both players started with 4 stocks
+    if len(game.start.players) != 2 or game.frames is None or len(game.frames.ports) != 2:
+        return None, 'not a 1v1 game'
+    p1char = game.start.players[0].character
+    p2char = game.start.players[1].character
     if not (game.start.players[0].stocks == 4 and game.start.players[1].stocks == 4):
-        return
-
-    # check if game was ended properly (no try guard here, we know the file is readable)
-    game = read_slippi(file.as_posix(), skip_frames=False)
-    if game.frames is None or len(game.frames.ports) != 2:
-        # e.g. doubles; returning (instead of asserting) keeps one odd file from killing the indexing run
-        logger.debug(f'Game in {file.name} is not a valid 1v1 game')
-        return
+        return None, 'did not start on 4 stocks'
+    if len(game.frames.id) == 0:
+        return None, 'no frames'
     p1stocks = as_int(game.frames.ports[0].leader.post.stocks[-1])
     p2stocks = as_int(game.frames.ports[1].leader.post.stocks[-1])
     if not (p1stocks == 0 or p2stocks == 0):
-        logger.debug(f'Game in {file.name} did not end properly')
-        return
+        return None, 'not played out'
 
-    # also find netplay ranks if available
+    # netplay ranks, if available
     ranks = [
         p.netplay.name.replace(' Player', '') if p.netplay else None for p in game.start.players
     ]
 
-    # create and return record
-    return TrainReplayRecord(
+    record = TrainReplayRecord(
         archive=arch,
-        bucket=bucket,
-        file_name=file.name,
+        bucket=(p1char == FOX) + (p2char == FOX),  # 0, 1, or 2 foxes
+        file_name=Path(member).name.removesuffix('.gz'),
+        member=member,
         stage=game.start.stage,
         p1char=p1char,
         p2char=p2char,
@@ -106,6 +103,7 @@ def parse_train_replay(
         p1rank=ranks[0],
         p2rank=ranks[1],
     )
+    return record, None
 
 
 def parse_eval_replay(file: Path) -> Optional[EvalReplayRecord]:
