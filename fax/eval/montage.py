@@ -217,7 +217,7 @@ def render_clip(
             graph += f';{mix}amix=inputs={len(audio)}:normalize=0[a]'
         ffmpeg += ['-filter_complex', graph, '-map', '[v]']
         ffmpeg += ['-map', '[a]'] if audio else ['-an']
-        ffmpeg += ['-c:v', 'libx264', '-crf', '20', '-preset', 'fast', '-pix_fmt', 'yuv420p']
+        ffmpeg += ['-c:v', 'libx264', '-crf', '16', '-preset', 'fast', '-pix_fmt', 'yuv420p']
         ffmpeg += ['-r', '60', '-c:a', 'aac', '-ar', '48000', '-ac', '2', '-shortest']
         ffmpeg.append(out.as_posix())
         # the dump's last frame is often damaged, which ffmpeg reports but gets past
@@ -269,11 +269,17 @@ if __name__ == '__main__':
     # several dolphins starting at once sometimes leave one without a display: try those again
     done = [ok or render(job) for ok, job in zip(done, zip(picked, clips))]
 
-    listing = clip_dir / 'clips.txt'
-    listing.write_text(''.join(f"file '{c.as_posix()}'\n" for c, ok in zip(clips, done) if ok))
-    subprocess.run(
-        ['ffmpeg', '-v', 'error', '-y', '-f', 'concat', '-safe', '0', '-i', listing.as_posix()]
-        + ['-c', 'copy', '-movflags', '+faststart', args.out.as_posix()],
-        check=True,
-    )
+    # join by decoding and encoding again: copying the streams of the clips one after the other
+    # leaves the sound of every clip a little shorter or longer than its picture, and players
+    # disagree on what to do with that
+    good = [c for c, ok in zip(clips, done) if ok]
+    join = ['ffmpeg', '-v', 'error', '-y']
+    for clip in good:
+        join += ['-i', clip.as_posix()]
+    streams = ''.join(f'[{i}:v][{i}:a]' for i in range(len(good)))
+    join += ['-filter_complex', f'{streams}concat=n={len(good)}:v=1:a=1[v][a]']
+    join += ['-map', '[v]', '-map', '[a]', '-c:v', 'libx264', '-crf', '21', '-preset', 'fast']
+    join += ['-pix_fmt', 'yuv420p', '-r', '60', '-c:a', 'aac', '-ar', '48000', '-ac', '2']
+    join += ['-movflags', '+faststart', args.out.as_posix()]
+    subprocess.run(join, check=True)
     logger.info(f'Wrote {args.out} with {sum(done)} clips')
