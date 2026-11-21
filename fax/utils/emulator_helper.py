@@ -126,6 +126,21 @@ def get_gui_console_kwargs(
     return console_kwargs
 
 
+def costume_presses(costume_1: int, costume_2: int, n_costumes: int = 4) -> Tuple[int, int]:
+    """
+    How often each player has to press the costume button to end up in the given costumes, when
+    both play the same character and player 1 goes first. Player 1 starts on costume 0; player 2
+    starts on the first free one, and skips the one player 1 wears.
+    """
+    assert costume_1 != costume_2, 'Two players of the same character need different costumes'
+    presses_2, current = 0, 0 if costume_1 != 0 else 1
+    while current != costume_2:
+        current = (current + 1) % n_costumes
+        if current != costume_1:
+            presses_2 += 1
+    return costume_1, presses_2
+
+
 @attr.s(auto_attribs=True)
 class MatchupMenuHelper:
     controller_1: melee.Controller
@@ -134,9 +149,39 @@ class MatchupMenuHelper:
     character_2: Optional[melee.Character]
     stage: Optional[melee.Stage]
     opponent_cpu_level: int = 9
+    costume_1: int = 0
+    costume_2: int = 1
 
     # internal use
     _player_1_character_selected: bool = False
+    _costume_presses: Dict[int, int] = attr.Factory(lambda: {1: 0, 2: 0, 3: 0, 4: 0})
+
+    def _cycle_costume(
+        self,
+        gamestate: melee.GameState,
+        controller: melee.Controller,
+        character: melee.Character,
+        presses: int,
+    ) -> bool:
+        """
+        Press the costume button until it has been pressed `presses` times, once the character
+        is picked. Returns whether the controller was used for that this frame.
+
+        libmelee's menu helper only handles costumes in the netplay menu, and the local menu
+        does not report the current costume, so this counts presses. The menu remembers the
+        costume between games, so it is only done once per emulator.
+        """
+        state = gamestate.players.get(controller.port)
+        if state is None or state.character is not character or not state.coin_down:
+            return False
+        if state.is_holding_cpu_slider or self._costume_presses[controller.port] >= presses:
+            return False
+        if controller.prev.button[melee.Button.BUTTON_X]:
+            controller.release_all()
+            self._costume_presses[controller.port] += 1
+        else:
+            controller.press_button(melee.Button.BUTTON_X)
+        return True
 
     def select_character_and_stage(self, gamestate: melee.GameState) -> None:
         """
@@ -151,23 +196,36 @@ class MatchupMenuHelper:
             )
         # if we're at the character select screen, choose our character
         elif gamestate.menu_state == melee.enums.Menu.CHARACTER_SELECT:
-            menu_helper.choose_character(
-                character=self.character_1,
-                gamestate=gamestate,
-                controller=self.controller_1,
-                cpu_level=0,  # human
-                costume=0,
-                swag=False,
-                start=False,
+            # player 1 picks a character and costume first, so the costume player 2 starts on
+            # (the first one that is free) is known
+            presses_1, presses_2 = costume_presses(self.costume_1, self.costume_2)
+            if not self._cycle_costume(gamestate, self.controller_1, self.character_1, presses_1):
+                menu_helper.choose_character(
+                    character=self.character_1,
+                    gamestate=gamestate,
+                    controller=self.controller_1,
+                    cpu_level=0,  # human
+                    costume=self.costume_1,
+                    swag=False,
+                    start=False,
+                )
+            state_1 = gamestate.players.get(self.controller_1.port)
+            player_1_ready = (
+                state_1 is not None
+                and state_1.character is self.character_1
+                and state_1.coin_down
+                and self._costume_presses[self.controller_1.port] >= presses_1
             )
-            if self.character_2 is None:
+            if self.character_2 is None or not player_1_ready:
+                return
+            if self._cycle_costume(gamestate, self.controller_2, self.character_2, presses_2):
                 return
             menu_helper.choose_character(
                 character=self.character_2,
                 gamestate=gamestate,
                 controller=self.controller_2,
                 cpu_level=self.opponent_cpu_level,
-                costume=1,
+                costume=self.costume_2,
                 swag=False,
                 start=True,
             )
@@ -263,6 +321,8 @@ class Matchup:
     stage: str = 'BATTLEFIELD'
     ego_character: str = 'FOX'
     opponent_character: str = 'FOX'
+    ego_costume: int = 0
+    opponent_costume: int = 1
 
 
 @attr.s(auto_attribs=True)
@@ -308,6 +368,8 @@ class EmulatorManager:
             character_2=melee.Character[self.matchup.opponent_character],
             stage=melee.Stage[self.matchup.stage],
             opponent_cpu_level=self.opponent_cpu_level,
+            costume_1=self.matchup.ego_costume,
+            costume_2=self.matchup.opponent_costume,
         )
 
     def _queued_gamestate(self) -> melee.GameState | None:

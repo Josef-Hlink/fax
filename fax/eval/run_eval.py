@@ -30,6 +30,11 @@ from fax.utils.gamestate_utils import extract_eval_gamestate_as_tensordict
 from fax.processing.preprocessor import Preprocessor
 
 
+# Fox's costumes, close to the matchup colours of the thesis figures: default (white jacket),
+# orange, lavender and green
+COSTUME_BY_MATCHUP = {'FvF': 0, 'FvX': 1, 'XvX': 2, 'XvF': 3}
+
+
 def cpu_worker(
     cfg: CFG,
     emulator_path: Path,
@@ -378,8 +383,18 @@ def run_closed_loop_evaluation(
     )
     gpu_process.start()
 
+    # every agent wears the costume of its training matchup; the opponent gets another one
+    # when they clash (an agent against itself) and when it is the CPU
+    p1_costume = COSTUME_BY_MATCHUP[matchup_from_run_type(cfg.eval.p1_type)]
+    if p2_weights_path is not None:
+        p2_costume = COSTUME_BY_MATCHUP[matchup_from_run_type(cfg.eval.p2_type)]
+    else:
+        p2_costume = COSTUME_BY_MATCHUP['FvX']
+    if p2_costume == p1_costume:
+        p2_costume = (p1_costume + 1) % len(COSTUME_BY_MATCHUP)
     matchups = [
-        Matchup('BATTLEFIELD', cfg.eval.character, cfg.eval.character) for _ in range(n_workers)
+        Matchup('BATTLEFIELD', cfg.eval.character, cfg.eval.character, p1_costume, p2_costume)
+        for _ in range(n_workers)
     ]
     # for example, ~/Data/fax/replays/eval/MARTH/FvX-ft_vs_cpu
     base_replay_dir = (
