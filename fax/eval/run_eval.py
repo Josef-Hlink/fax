@@ -23,7 +23,7 @@ from tensordict import TensorDict
 
 from fax.config import CFG, create_parser, parse_args, setup_logger
 from fax.model import Model
-from fax.utils.constants import Player
+from fax.utils.constants import Player, get_opponent
 from fax.utils.emulator_helper import EmulatorManager, find_open_udp_ports, Matchup
 from fax.utils.schema import NP_TYPE_BY_COLUMN
 from fax.utils.gamestate_utils import extract_eval_gamestate_as_tensordict
@@ -46,12 +46,17 @@ def cpu_worker(
     model_output_ready_flag: EventType,
     new_game_flag: EventType,
     stop_event: EventType,
+    opponent_preprocessor: Preprocessor | None = None,
     debug: bool = False,
 ) -> None:
     """
     CPU worker that preprocesses data, writes it into shared memory,
     and sends controller inputs to the emulator from model predictions.
+
+    With an `opponent_preprocessor`, the opponent is a second agent instead of the CPU. Its
+    inputs and outputs live in the second half of the shared buffers, at `n_workers + rank`.
     """
+    opponent_rank = cfg.eval.n_workers + rank
 
     setup_logger(Path(cfg.paths.logs) / Path(__file__).name.replace('.py', '.log'), debug=debug)
     with logger.contextualize(rank=rank):
@@ -60,7 +65,7 @@ def cpu_worker(
             player=player,
             emulator_path=emulator_path,
             replay_dir=replay_dir,
-            opponent_cpu_level=9,
+            opponent_cpu_level=9 if opponent_preprocessor is None else 0,
             matchup=matchup,
             enable_ffw=cfg.eval.ffw,
             debug=debug,
@@ -94,6 +99,13 @@ def cpu_worker(
                 sharded_model_input: TensorDict = shared_batched_model_input[rank]
                 # update our rank of the shared buffer with the last frame
                 sharded_model_input.update_(model_inputs[-1], non_blocking=True)
+                if opponent_preprocessor is not None:
+                    opponent_inputs = opponent_preprocessor.preprocess_inputs(
+                        gamestate_td, get_opponent(player)
+                    )
+                    shared_batched_model_input[opponent_rank].update_(
+                        opponent_inputs[-1], non_blocking=True
+                    )
 
                 model_input_ready_flag.set()
 
@@ -110,8 +122,17 @@ def cpu_worker(
                     model_output, temperature=cfg.eval.temperature
                 )
 
+                opponent_controller_inputs = None
+                if opponent_preprocessor is not None:
+                    opponent_controller_inputs = opponent_preprocessor.postprocess_preds(
+                        shared_batched_model_output[opponent_rank].clone(),
+                        temperature=cfg.eval.temperature,
+                    )
+
                 # send controller inputs to emulator, update gamestate
-                gamestate = gamestate_generator.send((controller_inputs, None))
+                gamestate = gamestate_generator.send(
+                    (controller_inputs, opponent_controller_inputs)
+                )
 
                 # clear the output ready flag for the next iteration
                 model_output_ready_flag.clear()
@@ -149,8 +170,8 @@ def gpu_worker(
 
 def _gpu_worker(
     cfg: CFG,
-    shared_batched_model_input_B: TensorDict,  # (n_workers,)
-    shared_batched_model_output_B: TensorDict,  # (n_workers,)
+    shared_batched_model_input_B: TensorDict,  # (n_workers,), twice that with a second agent
+    shared_batched_model_output_B: TensorDict,  # same
     model_input_ready_flags: List[EventType],
     model_output_ready_flags: List[EventType],
     new_game_flags: List[EventType],
@@ -159,41 +180,54 @@ def _gpu_worker(
     p1_weights_path: Path,
     stats_path: Path | None,
     device: torch.device | str,
+    p2_weights_path: Path | None = None,
+    p2_stats_path: Path | None = None,
     cpu_flag_timeout: float = 5.0,
     debug: bool = False,
 ) -> None:
     """
     GPU worker that batches data from shared memory, updates the context window,
     performs inference with model, and writes output back to shared memory.
+
+    With `p2_weights_path`, a second agent plays the opponents: the first half of the batch is
+    player 1's view of every game, the second half player 2's.
     """
     setup_logger(Path(cfg.paths.logs) / Path(__file__).name.replace('.py', '.log'), debug=debug)
     torch.set_float32_matmul_precision('high')
-    preprocessor = Preprocessor(cfg, stats_path)
-    model = Model(preprocessor, cfg)
-    with open(p1_weights_path, 'rb') as f:
-        logger.debug(f'Loading model weights from {p1_weights_path}...')
-        state_dict = torch.load(f, map_location='cpu')
-        model.load_state_dict(state_dict)
-    model.eval()
-    model.to(device)
+    agents = [(p1_weights_path, stats_path)]
+    if p2_weights_path is not None:
+        agents.append((p2_weights_path, p2_stats_path))
+    models: List[torch.nn.Module] = []
+    for weights_path, agent_stats_path in agents:
+        model = Model(Preprocessor(cfg, agent_stats_path), cfg)
+        with open(weights_path, 'rb') as f:
+            logger.debug(f'Loading model weights from {weights_path}...')
+            model.load_state_dict(torch.load(f, map_location='cpu'))
+        model.eval()
+        model.to(device)
+        models.append(model)
+
+    n_workers = len(stop_events)
 
     # stack along time dimension
-    # shape: (n_workers, seq_len)
+    # shape: (n_rows, seq_len), with n_rows = n_workers * number of agents
     inputs_BL: List[torch.Tensor] = [shared_batched_model_input_B for _ in range(seq_len)]  # type: ignore
     context_window_BL: TensorDict = torch.stack(inputs_BL, dim=-1).to(device)  # type: ignore
     logger.debug(f'Context window shape: {context_window_BL.shape}')
 
     # warmup CUDA graphs with dummy inputs
     logger.debug('Compiling model...')
-    compiled_model = torch.compile(model, mode='default')
-    try:
-        with torch.no_grad():
-            compiled_model(context_window_BL)
-        model = compiled_model
-        logger.debug('Warmup step finished')
-    except Exception as e:
-        # compilation needs a working C compiler and CUDA toolchain; inference is fast enough without
-        logger.warning(f'Could not compile the model, running it uncompiled: {e}')
+    for a, model in enumerate(models):
+        compiled_model = torch.compile(model, mode='default')
+        try:
+            with torch.no_grad():
+                compiled_model(context_window_BL[:n_workers])
+            models[a] = compiled_model
+            logger.debug('Warmup step finished')
+        except Exception as e:
+            # compilation needs a working C compiler and CUDA toolchain; inference is fast
+            # enough without
+            logger.warning(f'Could not compile the model, running it uncompiled: {e}')
 
     def wait_for_cpu_workers(timeout: float = 5.0) -> None:
         # wait for all CPU workers to signal that data is ready
@@ -213,9 +247,9 @@ def _gpu_worker(
 
     # every worker has its own position in the context window, which goes back to the start
     # when its emulator begins a new game
-    n_workers = len(stop_events)
-    rows_B = torch.arange(n_workers, device=device)
-    n_frames_B = torch.zeros(n_workers, dtype=torch.long, device=device)
+    n_rows = n_workers * len(models)
+    rows_B = torch.arange(n_rows, device=device)
+    n_frames_B = torch.zeros(n_rows, dtype=torch.long, device=device)
 
     i = 0
     while not all(event.is_set() for event in stop_events):
@@ -229,7 +263,7 @@ def _gpu_worker(
         for rank, new_game_flag in enumerate(new_game_flags):
             if new_game_flag.is_set():
                 new_game_flag.clear()
-                n_frames_B[rank] = 0
+                n_frames_B[rank::n_workers] = 0
                 logger.debug(f'Worker {rank} started a new game, context window cleared')
 
         transfer_start = time.perf_counter()
@@ -246,7 +280,12 @@ def _gpu_worker(
 
         inference_start = time.perf_counter()
         with torch.no_grad():
-            outputs_BL: TensorDict = model(context_window_BL)
+            # every agent plays its own slice of the batch
+            outputs = [
+                model(context_window_BL[a * n_workers : (a + 1) * n_workers])
+                for a, model in enumerate(models)
+            ]
+            outputs_BL: TensorDict = outputs[0] if len(outputs) == 1 else torch.cat(outputs, dim=0)  # type: ignore
         inference_time = time.perf_counter() - inference_start
 
         writeback_start = time.perf_counter()
@@ -282,13 +321,20 @@ def run_closed_loop_evaluation(
     cfg: CFG,
     p1_weights_path: Path,
     stats_path: Path | None = None,
+    p2_weights_path: Path | None = None,
+    p2_stats_path: Path | None = None,
     player: Player = 'p1',
     debug: bool = False,
 ) -> None:
     mp.set_start_method('spawn', force=True)
     device: torch.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     preprocessor = Preprocessor(cfg, stats_path)
+    opponent_preprocessor = None
+    if p2_weights_path is not None:
+        opponent_preprocessor = Preprocessor(cfg, p2_stats_path)
     n_workers = cfg.eval.n_workers
+    # with a second agent, the shared buffers get a second half for the opponents' view
+    n_rows = n_workers * (1 if p2_weights_path is None else 2)
 
     # create events to signal when cpu and gpu workers are ready
     model_input_ready_flags: List[EventType] = [mp.Event() for _ in range(n_workers)]
@@ -301,13 +347,13 @@ def run_closed_loop_evaluation(
     mock_framedata_L = mock_framedata_as_tensordict(preprocessor.trajectory_sampling_len)
     # Store only a single time step to minimize copying
     mock_model_inputs_ = preprocessor.preprocess_inputs(mock_framedata_L, player)[-1]
-    # batch_size == n_workers
+    # batch_size == n_rows
     shared_batched_model_input_B: TensorDict = torch.stack(
-        [mock_model_inputs_ for _ in range(n_workers)],
+        [mock_model_inputs_ for _ in range(n_rows)],
         dim=0,  # type: ignore
     )
     shared_batched_model_input_B = share_and_pin_memory(shared_batched_model_input_B)
-    preds: list[torch.Tensor] = [preprocessor.mock_preds_as_tensordict() for _ in range(n_workers)]  # type: ignore
+    preds: list[torch.Tensor] = [preprocessor.mock_preds_as_tensordict() for _ in range(n_rows)]  # type: ignore
     shared_batched_model_output_B: TensorDict = torch.stack(preds, dim=0)  # type: ignore
     shared_batched_model_output_B = share_and_pin_memory(shared_batched_model_output_B)
 
@@ -324,6 +370,8 @@ def run_closed_loop_evaluation(
             'stop_events': stop_events,
             'p1_weights_path': p1_weights_path,
             'stats_path': stats_path,
+            'p2_weights_path': p2_weights_path,
+            'p2_stats_path': p2_stats_path,
             'device': device,
             'debug': debug,
         },
@@ -362,6 +410,7 @@ def run_closed_loop_evaluation(
                 'matchup': matchup,
                 'replay_dir': replay_dir,
                 'preprocessor': preprocessor,
+                'opponent_preprocessor': opponent_preprocessor,
                 'model_input_ready_flag': model_input_ready_flags[i],
                 'model_output_ready_flag': model_output_ready_flags[i],
                 'new_game_flag': new_game_flags[i],
@@ -474,6 +523,21 @@ if __name__ == '__main__':
         # roughly 1 in 3 is skipped and another 1 in 3 is applied for two frames
         logger.warning('Fast-forward is not frame-accurate: the agent plays with dropped inputs')
 
+    # a second agent instead of the CPU; it needs the stats that training saved with its weights
+    p2_weights_path: Path | None = None
+    p2_stats_path: Path | None = None
+    if cfg.eval.p2_type != 'cpu':
+        candidates = sorted((cfg.paths.weights / cfg.eval.p2_type).glob('*.pth'))
+        assert candidates, f'No weights found in {cfg.paths.weights / cfg.eval.p2_type}'
+        if cfg.eval.p2_run:
+            p2_weights_path = cfg.paths.weights / cfg.eval.p2_type / f'{cfg.eval.p2_run}.pth'
+            assert p2_weights_path in candidates, f'{p2_weights_path} does not exist'
+        else:
+            p2_weights_path = random.choice(candidates)
+        p2_stats_path = p2_weights_path.with_suffix('.stats.json')
+        assert p2_stats_path.exists(), f'{p2_stats_path} does not exist'
+        logger.info(f'Player 2 is {p2_weights_path.name} (1 of {len(candidates)} candidates)')
+
     # every loop will generate ~2x n_workers replays
     for i in range(cfg.eval.n_loops):
         logger.info(f'CLE loop {i + 1}/{cfg.eval.n_loops}')
@@ -481,6 +545,8 @@ if __name__ == '__main__':
             cfg,
             p1_weights_path=p1_weights_path,
             stats_path=stats_path,
+            p2_weights_path=p2_weights_path,
+            p2_stats_path=p2_stats_path,
             player='p1',
             debug=cfg.base.debug,
         )

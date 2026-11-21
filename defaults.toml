@@ -40,6 +40,7 @@ both-perspectives = false
 p1-type = "1k-FvF-ft"
 p1-run = ""
 p2-type = "cpu"
+p2-run = ""
 n-loops = 5
 n-workers = 2
 ffw = false

@@ -94,6 +94,7 @@ class EvalCFG:
     p1_type: str
     p1_run: str
     p2_type: str
+    p2_run: str
     n_loops: int
     n_workers: int
     ffw: bool
