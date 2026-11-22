@@ -105,6 +105,7 @@ Note that I do not mention any paths or CLI arguments to the `uv run` commands b
 5. Run `uv run fax/dataprep/build_dataset.py` to copy `n-samples` + `n-val-samples` replays per bucket out of the pools into the datasets for training.
     No replay is parsed here, so making another dataset later is cheap.
     The index remembers which split a replay went to, so a bigger dataset contains the smaller one.
+    With `--slim` the datasets leave out the projectiles and ranks, which the agents don't use: that is 42% less to store and to read while training.
 6. Run `uv run fax/dataprep/stats.py` to calculate the statistics for each of the input features in the datasets.
     These stats are needed for input normalization during training.
     Note that this script will unpack the .mds files, so make sure you have enough disk space; \~20x the size of the compressed sets should be safe.

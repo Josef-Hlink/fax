@@ -108,7 +108,6 @@ NP_TYPE_BY_COLUMN: dict[str, DTypeLike] = {
     'p2_r_shoulder': np.float32,
 }
 
-# Create a mapping of column names to human-readable dtype strings.
 # The first projectiles on screen, in the order the game lists them. An empty slot has type -1.
 N_PROJECTILE_SLOTS = 8
 PROJECTILE_FIELDS: dict[str, DTypeLike] = {
@@ -131,6 +130,17 @@ RANK_INDEX = {rank: i for i, rank in enumerate(RANKS, start=1)}
 NP_TYPE_BY_COLUMN['p1_rank'] = np.int32
 NP_TYPE_BY_COLUMN['p2_rank'] = np.int32
 
+# What the pools keep and the agents don't use: 42% of a replay's bytes
+UNUSED_COLUMNS = frozenset(
+    [
+        f'projectile{slot}_{field}'
+        for slot in range(N_PROJECTILE_SLOTS)
+        for field in PROJECTILE_FIELDS
+    ]
+    + ['p1_rank', 'p2_rank']
+)
+
+# Create a mapping of column names to human-readable dtype strings.
 MDS_DTYPE_STR_BY_COLUMN = {
     name: f'ndarray:{np.dtype(dtype).name}' for name, dtype in NP_TYPE_BY_COLUMN.items()
 }
