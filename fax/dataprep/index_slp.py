@@ -46,8 +46,12 @@ def _index_member(member: str) -> Tuple[str, Optional[TrainReplayRecord], Option
     try:
         extract_member(_zip_arch, member, tmp_path)
         record, reason = parse_train_replay(tmp_path, Path(_zip_arch.filename or '').name, member)
-    except Exception as e:  # a broken member must not stop the run
-        record, reason = None, f'unreadable: {e}'
+    # a broken member must not stop the run; peppi's panics are BaseExceptions, and a worker that
+    # dies on one loses its chunk and leaves the pool waiting forever
+    except BaseException as e:
+        if isinstance(e, (KeyboardInterrupt, SystemExit)):
+            raise
+        record, reason = None, f'unreadable: {type(e).__name__}: {e}'
     finally:
         tmp_path.unlink(missing_ok=True)
     return member, record, reason
